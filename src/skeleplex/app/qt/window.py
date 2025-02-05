@@ -6,7 +6,7 @@ from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QLabel, QStatusBar
 
 from skeleplex.app.constants import CommandId, MenuId
-from skeleplex.app.qt import AppControls, AuxiliaryViews
+from skeleplex.app.qt import AppControlsDock, AuxiliaryViews
 
 MIN_WINDOW_WIDTH = 1000
 MIN_WINDOW_HEIGHT = 600
@@ -35,7 +35,7 @@ class MainWindow(QModelMainWindow):
         self._create_status_bar()
 
     def _create_app_controls(self):
-        self.app_controls = AppControls(parent=self)
+        self.app_controls = AppControlsDock(parent=self)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.app_controls)
 
     def _create_auxiliary_views(self):

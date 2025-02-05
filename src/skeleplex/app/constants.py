@@ -10,7 +10,8 @@ class CommandId(str, Enum):
     CLOSE = "skeleplex.close"
     SAVE = "skeleplex.save"
     QUIT = "skeleplex.quit"
-    ADD_POINTS = "skeleplex.add_points"
+    LOAD_DATA = "skeleplex.load_data"
+    LOOK_AT_SKELETON = "skeleplex.look_at_skeleton"
 
     UNDO = "skeleplex.undo"
     REDO = "skeleplex.redo"
