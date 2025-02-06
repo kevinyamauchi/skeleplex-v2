@@ -54,3 +54,26 @@ def big_t() -> np.ndarray:
         image[50, rr, cc] = 1
 
     return image
+
+
+def simple_bifurcating_branches() -> np.ndarray:
+    """Create a skeleton image with a simple bifurcating tree."""
+    # node coordinates for each branch
+    branch_coordinates = [
+        [(20, 100), (40, 100)],
+        [(40, 100), (60, 80)],
+        [(40, 100), (60, 120)],
+        [(60, 80), (75, 65)],
+        [(60, 80), (75, 95)],
+        [(60, 120), (75, 105)],
+        [(60, 120), (75, 135)],
+    ]
+
+    # draw the image
+    image = np.zeros((200, 200, 200), dtype=bool)
+
+    for branch in branch_coordinates:
+        rr, cc = line(*branch[0], *branch[1])
+        image[100, rr, cc] = 1
+
+    return image
