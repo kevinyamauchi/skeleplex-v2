@@ -2,7 +2,6 @@
 
 import logging
 
-import numpy as np
 from app_model import Application
 from app_model.types import Action, MenuRule
 from cellier.models.data_stores.lines import LinesMemoryStore
@@ -15,7 +14,6 @@ from skeleplex.app.cellier import make_viewer_controller, make_viewer_model
 from skeleplex.app.constants import CommandId, MenuId
 from skeleplex.app.data import DataManager, SkeletonDataPaths
 from skeleplex.app.qt import MainWindow
-from skeleplex.visualize.spline import line_segment_coordinates_from_spline
 
 log = logging.getLogger(__name__)
 
@@ -67,11 +65,8 @@ class SkelePlexApp(Application):
             log.debug("No skeleton graph loaded.")
             return
 
-        # load the skeleton graph
-        skeleton_graph = self.data.skeleton_graph
-
         # get the node coordinates
-        coordinates = skeleton_graph.node_coordinates_array
+        coordinates = self.data.node_coordinates
 
         # make the points store
         points_store = PointsMemoryStore(coordinates=coordinates)
@@ -95,12 +90,7 @@ class SkelePlexApp(Application):
         )
 
         # get the edge lines
-        edge_coordinates = np.concatenate(
-            [
-                line_segment_coordinates_from_spline(spline)
-                for edge_key, spline in skeleton_graph.edge_splines.items()
-            ]
-        )
+        edge_coordinates = self.data.edge_coordinates
 
         # make the lines store
         lines_store = LinesMemoryStore(coordinates=edge_coordinates)
