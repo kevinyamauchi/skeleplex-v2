@@ -178,7 +178,6 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
 
     return graph
 
-
 class SkeletonGraph:
     """Data class for a skeleton graph.
 
@@ -328,3 +327,12 @@ class SkeletonGraph:
         """Orient the splines in the graph."""
         self.graph = orient_splines(self.graph)
         return self.graph
+
+    def compute_edge_lengths(self) -> dict:
+        """Return a dictionary of edge lengths."""
+        edge_lengths = {}
+        for u, v, attr in self.graph.edges(data=True):
+            edge_lengths[(u, v)] = attr[EDGE_SPLINE_KEY].arc_length()
+
+        nx.set_edge_attributes(self.graph, edge_lengths, "length")
+        return edge_lengths
