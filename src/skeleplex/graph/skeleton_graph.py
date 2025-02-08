@@ -275,6 +275,30 @@ class SkeletonGraph:
         )
         return cls(graph=graph)
 
+    @classmethod
+    def from_graph(
+        cls, graph, edge_coordinate_key, node_coordinate_key
+    ) -> "SkeletonGraph":
+        """Return a SkeletonGraph from a graph.
+
+        Parameters
+        ----------
+        graph : nx.Graph
+            The graph to convert to a SkeletonGraph.
+        edge_coordinate_key : str
+            The key to use for the edge coordinates.
+        node_coordinate_key : str
+            The key to use for the node coordinates.
+        """
+        for _, _, attr in graph.edges(data=True):
+            attr[EDGE_COORDINATES_KEY] = attr.pop(edge_coordinate_key)
+            # add spline
+            spline = B3Spline.from_points(attr[EDGE_COORDINATES_KEY])
+            attr[EDGE_SPLINE_KEY] = spline
+        for _, node_data in graph.nodes(data=True):
+            node_data[NODE_COORDINATE_KEY] = node_data.pop(node_coordinate_key)
+        return cls(graph=graph)
+
     def __eq__(self, other: "SkeletonGraph"):
         """Check if two SkeletonGraph objects are equal."""
         if set(self.nodes) != set(other.nodes):
