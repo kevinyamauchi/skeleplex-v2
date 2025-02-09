@@ -93,7 +93,7 @@ def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
             merge_attributes[key] = edge_attributes1[key]
         
         if key == LENGTH_KEY:
-            merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length()
+            merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
 
         if key not in  [VALIDATED_KEY, 
                             EDGE_COORDINATES_KEY, 
@@ -113,8 +113,7 @@ def delete_edge(SkeletonGraph_obj:SkeletonGraph, edge: Tuple[int, int]):
 
         #check if directed
         if not SkeletonGraph_obj.graph.is_directed():
-            SkeletonGraph_obj.to_directed()
-
+            ValueError('Graph is not directed. Convert to directed graph.')
         #copy graph
         graph = SkeletonGraph_obj.graph.copy()
         graph.remove_edge(*edge)
@@ -155,26 +154,30 @@ def length_pruning(SkeletonGraph_obj:SkeletonGraph, length_threshold:int):
         
         
         """
+        #check if directed
+        if not SkeletonGraph_obj.graph.is_directed():
+            ValueError('Graph is not directed. Convert to directed graph.')
+
         graph = SkeletonGraph_obj.graph
         g_unmodified = graph.copy()
 
         #check if length is already computed
-        if  len(nx.get_edge_attributes(graph, 'length')) == 0:
-            len_dict = SkeletonGraph.compute_branch_length(graph)
-            nx.set_edge_attributes(graph, len_dict, 'length')
-        c = 0
+        if  len(nx.get_edge_attributes(graph, LENGTH_KEY)) == 0:
+            len_dict = SkeletonGraph_obj.compute_branch_lengths()
+            nx.set_edge_attributes(graph, len_dict, LENGTH_KEY)
+
         for node, degree in g_unmodified.degree():
-            if degree == 1:
-                edge = list(graph.edges(node))[0]
-                path_length = graph.edges[edge[0], edge[1]].get('length')
-                start_node = graph.edges[edge]['start_node']
+            if (degree == 1) and (node != SkeletonGraph_obj.origin):
+                edge = list(graph.in_edges(node))[0]
+                path_length = graph.edges[edge[0], edge[1]].get(LENGTH_KEY)
+                # start_node = edge[0]
                 if path_length < length_threshold:
-                    c+=1
-                    #check orientation of edge
-                    if start_node == edge[0]:
-                        edge =edge[::-1]
+                    #chek if edge still exists in orginal graph
+                    if edge not in SkeletonGraph_obj.graph.edges:
+                        continue
+
                     try:
-                        delete_edge(graph, edge)
+                        delete_edge(SkeletonGraph_obj, edge)
                         logger.info(f'deleted{edge}')
                     except:
                         logger.info(f'could not delete{edge}')

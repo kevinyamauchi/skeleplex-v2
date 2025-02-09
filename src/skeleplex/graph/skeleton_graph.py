@@ -313,6 +313,7 @@ class SkeletonGraph:
         """Return a directed graph from the skeleton graph.
 
         The directed graph has the same nodes and edges as the skeleton graph.
+        Stores the origin node as an attribute.
 
         Parameters
         ----------
@@ -321,6 +322,7 @@ class SkeletonGraph:
             The origin node will have no incoming edges.
         """
         self.graph = make_graph_directed(self.graph, origin)
+        self.origin = origin
         return self.graph
 
     def orient_splines(self) -> nx.DiGraph:
@@ -328,11 +330,11 @@ class SkeletonGraph:
         self.graph = orient_splines(self.graph)
         return self.graph
 
-    def compute_edge_lengths(self) -> dict:
+    def compute_branch_lengths(self) -> dict:
         """Return a dictionary of edge lengths."""
         edge_lengths = {}
         for u, v, attr in self.graph.edges(data=True):
-            edge_lengths[(u, v)] = attr[EDGE_SPLINE_KEY].arc_length()
+            edge_lengths[(u, v)] = attr[EDGE_SPLINE_KEY].arc_length
 
         nx.set_edge_attributes(self.graph, edge_lengths, "length")
         return edge_lengths
