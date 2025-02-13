@@ -2,6 +2,8 @@
 
 from qtpy.QtWidgets import QDockWidget, QLabel, QWidget
 
+from skeleplex.app.qt.styles import DOCK_WIDGET_STYLE
+
 
 class AuxiliaryViews(QDockWidget):
     """A dock widget for the auxiliary views.
@@ -13,6 +15,7 @@ class AuxiliaryViews(QDockWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent=parent)
+        self.setStyleSheet(DOCK_WIDGET_STYLE)
 
         self.label = QLabel("I'm the Auxiliary Views")
         self.label.setMinimumWidth(self.MINIMUM_WIDTH)

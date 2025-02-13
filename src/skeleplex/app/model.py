@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 class SkelePlexApp(Application):
     """The main application class."""
 
-    def __init__(self) -> None:
+    def __init__(self, data: DataManager | None = None) -> None:
         super().__init__("SkelePlex")
 
         # ACTIONS is a list of Action objects.
@@ -36,9 +36,10 @@ class SkelePlexApp(Application):
         self._main_window.setModelMenuBar([MenuId.FILE, MenuId.EDIT, MenuId.DATA])
 
         # make the data model
-        self._data = DataManager(file_paths=SkeletonDataPaths())
-        # self._data.file_paths.skeleton_graph = "./scripts/e16_skeleplex_v2.json"
-        # self._data.load()
+        if data is None:
+            self._data = DataManager(file_paths=SkeletonDataPaths())
+        else:
+            self._data = data
 
         # make the viewer model
         self._viewer_model, self._main_viewer_scene_id = make_viewer_model()
@@ -48,10 +49,13 @@ class SkelePlexApp(Application):
 
         for canvas in self._viewer_controller._canvas_widgets.values():
             # add the canvas widgets
-            self._main_window.setCentralWidget(canvas)
+            self._main_window._set_main_viewer_widget(canvas)
 
         # connect the data events
         self._connect_data_events()
+
+        # update the data view
+        self.data.view.update()
 
     @property
     def data(self) -> DataManager:
@@ -66,14 +70,14 @@ class SkelePlexApp(Application):
             return
 
         # get the node coordinates
-        coordinates = self.data.node_coordinates
+        coordinates = self.data.view.node_coordinates
 
         # make the points store
         points_store = PointsMemoryStore(coordinates=coordinates)
 
         # make the points material
         points_material_3d = PointsUniformMaterial(
-            size=3, color=(1, 1, 1, 1), size_coordinate_space="data"
+            size=3, color=(0, 0, 0, 1), size_coordinate_space="data"
         )
 
         # make the points model
@@ -90,7 +94,7 @@ class SkelePlexApp(Application):
         )
 
         # get the edge lines
-        edge_coordinates = self.data.edge_coordinates
+        edge_coordinates = self.data.view.edge_coordinates
 
         # make the lines store
         lines_store = LinesMemoryStore(coordinates=edge_coordinates)
@@ -114,7 +118,14 @@ class SkelePlexApp(Application):
 
         self._viewer_controller.reslice_scene(scene_id=self._main_viewer_scene_id)
 
+        self.lines = lines_visual_3d
         self.points = points_visual_3d
+
+        self._viewer_controller.add_visual_callback(
+            visual_id=self.lines.id,
+            callback=self._on_click,
+            callback_type=("pointer_down",),
+        )
 
     def look_at_skeleton(self) -> None:
         """Set the camera in the main viewer to look at the skeleton.
@@ -130,6 +141,41 @@ class SkelePlexApp(Application):
     def show(self) -> None:
         """Show the app."""
         self._main_window.show()
+
+    def _on_click(self, event) -> None:
+        """Handle the click event."""
+        print(event.pick_info)
+
+        vertex_index = event.pick_info["vertex_index"]
+
+        edge_index = self.data.edge_indices[vertex_index]
+
+        edge_mask = self.data.edge_indices == edge_index
+        coordinates = self.data.edge_coordinates[edge_mask]
+        print(coordinates.shape)
+
+        # make the points store
+        points_store = PointsMemoryStore(coordinates=coordinates)
+
+        # make the points material
+        points_material_3d = PointsUniformMaterial(
+            size=8, color=(1, 0, 1, 1), size_coordinate_space="data"
+        )
+
+        # make the points model
+        points_visual_3d = PointsNode(
+            name="points_node_3d",
+            data_store_id=points_store.id,
+            material=points_material_3d,
+        )
+
+        # add the points to the viewer
+        self._viewer_controller.add_data_store(data_store=points_store)
+        self._viewer_controller.add_visual(
+            visual_model=points_visual_3d, scene_id=self._main_viewer_scene_id
+        )
+
+        self._viewer_controller.reslice_scene(scene_id=self._main_viewer_scene_id)
 
     def _register_data_actions(self) -> None:
         """Register actions for adding/removing data to/from the viewer."""
@@ -156,24 +202,15 @@ class SkelePlexApp(Application):
     def _connect_data_events(self) -> None:
         """Connect the events for handling changes in the data."""
         # event for when the data loading button is pressed
-        # this updates the data paths
+        # this updates the data paths and loads the data.
         self._main_window.app_controls.widget().load_data_widget.called.connect(
-            self._load_data_clicked
+            self.data._update_paths_load_data
+        )
+
+        # event for updating the view when the render button is pressed
+        self._main_window.app_controls.widget().view_box.render_button.clicked.connect(
+            self.data.view.update
         )
 
         # event for updating the main viewer when the data paths are updated
-        self.data.events.data.connect(self.load_main_viewer)
-
-    def _load_data_clicked(
-        self,
-        new_data_paths: SkeletonDataPaths,
-    ) -> None:
-        """Load data from the GUI.
-
-        This is a method intended to be used to generate a magicgui widget
-        for the GUI.
-        """
-        self.data.file_paths.image = new_data_paths.image
-        self.data.file_paths.segmentation = new_data_paths.segmentation
-        self.data.file_paths.skeleton_graph = new_data_paths.skeleton_graph
-        self.data.load()
+        self.data.view.events.data.connect(self.load_main_viewer)
