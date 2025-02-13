@@ -3,10 +3,14 @@
 from pathlib import Path
 
 from magicgui import magicgui
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QDockWidget,
     QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
@@ -14,12 +18,12 @@ from qtpy.QtWidgets import (
 )
 
 from skeleplex.app.data import SkeletonDataPaths
-from skeleplex.app.qt.flat_group_box import FlatGroupBox
+from skeleplex.app.qt.flat_group_box import FlatHGroupBox, FlatVGroupBox
 from skeleplex.app.qt.styles import (
     DOCK_WIDGET_STYLE,
 )
 
-VIEW_BUTTON_STYLE = """
+GROUP_BOX_STYLE = """
 QGroupBox {
     background-color: #f3f3f3;
     border: 1px solid black;
@@ -37,11 +41,16 @@ QRadioButton {
 """
 
 
-class DataViewWidget(FlatGroupBox):
+class DataViewWidget(FlatVGroupBox):
     """A widget for selecting which regions of the data are in view."""
 
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(title="Data View", accent_color="#b7e2d8", parent=parent)
+    def __init__(self, collapsible: bool = False, parent: QWidget | None = None):
+        super().__init__(
+            title="Data View",
+            accent_color="#b7e2d8",
+            collapsible=collapsible,
+            parent=parent,
+        )
 
         # buttons for the mode
         self.mode_buttons = QButtonGroup(parent=self)
@@ -53,7 +62,7 @@ class DataViewWidget(FlatGroupBox):
         self.mode_buttons.addButton(self.node_button)
         self.mode_buttons.setExclusive(True)
         self.button_box = QGroupBox(title="View mode", parent=self)
-        self.button_box.setStyleSheet(VIEW_BUTTON_STYLE)
+        self.button_box.setStyleSheet(GROUP_BOX_STYLE)
         layout = QVBoxLayout()
         layout.addWidget(self.all_button)
         layout.addWidget(self.bounding_box_button)
@@ -69,32 +78,42 @@ class DataViewWidget(FlatGroupBox):
         self.add_widget(self.render_button)
 
 
-class DataSelectorWidget(FlatGroupBox):
+class SelectionModeWidget(QGroupBox):
+    """Widget for controlling a selection mode."""
+
+    def __init__(self, title: str = "", parent: QWidget | None = None):
+        super().__init__(title=title, parent=parent)
+
+        self.enable_checkbox = QCheckBox("Enable")
+        self.selection_box = QLineEdit()
+
+        # Make the layout
+        layout = QHBoxLayout()
+        layout.addWidget(self.enable_checkbox)
+        layout.addWidget(self.selection_box)
+        self.setLayout(layout)
+
+        # set the style
+        self.setStyleSheet(GROUP_BOX_STYLE)
+
+
+class DataSelectorWidget(FlatHGroupBox):
     """A widget for selecting data from the main viewer."""
 
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(title="Data Selector", accent_color="#cab8c4", parent=parent)
+    def __init__(self, collapsible: bool = False, parent: QWidget | None = None):
+        super().__init__(
+            title="Data Selector",
+            accent_color="#cab8c4",
+            collapsible=collapsible,
+            parent=parent,
+        )
 
-        # buttons for the mode
-        self.mode_buttons = QButtonGroup(parent=self)
-        self.image_button = QRadioButton("Image", parent=self)
-        self.segmentation_button = QRadioButton("Segmentation", parent=self)
-        self.skeleton_button = QRadioButton("Skeleton", parent=self)
-        self.mode_buttons.addButton(self.image_button)
-        self.mode_buttons.addButton(self.segmentation_button)
-        self.mode_buttons.addButton(self.skeleton_button)
-        self.mode_buttons.setExclusive(True)
-        self.button_box = QGroupBox(title="Data type", parent=self)
-        self.button_box.setStyleSheet(VIEW_BUTTON_STYLE)
-        layout = QVBoxLayout()
-        layout.addWidget(self.image_button)
-        layout.addWidget(self.segmentation_button)
-        layout.addWidget(self.skeleton_button)
-        self.button_box.setAutoFillBackground(True)
-        self.button_box.setLayout(layout)
+        self.edge_mode_box = SelectionModeWidget(title="Edge", parent=self)
+        self.node_mode_box = SelectionModeWidget(title="Node", parent=self)
 
         # Add the widgets
-        self.add_widget(self.button_box)
+        self.add_widget(self.edge_mode_box)
+        self.add_widget(self.node_mode_box)
 
 
 class AppControlsWidget(QWidget):
@@ -107,22 +126,29 @@ class AppControlsWidget(QWidget):
         super().__init__(parent=parent)
 
         self.load_data_widget = magicgui(self._load_data_gui)
-        stores_box = FlatGroupBox("Data Stores", accent_color="#b7e2d8", parent=self)
+        stores_box = FlatVGroupBox(
+            "Data Stores", accent_color="#b7e2d8", collapsible=True, parent=self
+        )
         stores_box.add_widget(self.load_data_widget.native)
 
         # widget for selecting the data view
-        self.view_box = DataViewWidget(parent=self)
+        self.view_box = DataViewWidget(
+            collapsible=True,
+            parent=self,
+        )
 
         # widget for selecting the data selection mode
-        self.selection_box = DataSelectorWidget(parent=self)
+        self.selection_box = DataSelectorWidget(collapsible=True, parent=self)
 
+        # make the layout
         layout = QVBoxLayout()
-
         layout.addWidget(stores_box)
         layout.addWidget(self.view_box)
         layout.addWidget(self.selection_box)
-
         layout.addStretch()
+
+        layout.setAlignment(Qt.AlignTop)
+
         self.setLayout(layout)
 
     def _load_data_gui(

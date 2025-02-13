@@ -2,7 +2,7 @@
 
 from qtpy.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from skeleplex.app.qt.flat_group_box import FlatGroupBox
+from skeleplex.app.qt.flat_group_box import FlatVGroupBox
 
 
 class MainViewerFrame(QFrame):
@@ -24,7 +24,7 @@ class MainViewerFrame(QFrame):
         self.setLayout(layout)
 
 
-class ImageControls(FlatGroupBox):
+class ImageControls(FlatVGroupBox):
     """Control UI for the skeleton."""
 
     def __init__(self, parent: QWidget):
@@ -35,7 +35,7 @@ class ImageControls(FlatGroupBox):
         self.add_widget(QLabel("test"))
 
 
-class SkeletonControls(FlatGroupBox):
+class SkeletonControls(FlatVGroupBox):
     """Control UI for the skeleton."""
 
     def __init__(self, parent: QWidget):

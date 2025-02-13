@@ -15,6 +15,18 @@ QLabel {{
 }}
 """
 
+FLAT_BUTTON_STYLE = """
+QPushButton {{
+    qproperty-alignment: AlignCenter;
+	border: 1px solid {accent_color};
+	background-color: {accent_color};
+	padding: 5px 0px;
+	color: black;
+	max-height: 25px;
+        font-size: 14px;
+}}
+"""
+
 FLAT_FRAME_STYLE = """
 
 QPushButton {
