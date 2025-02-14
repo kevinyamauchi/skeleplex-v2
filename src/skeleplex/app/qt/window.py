@@ -3,13 +3,25 @@
 from app_model import Application
 from app_model.backends.qt import QModelMainWindow
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QLabel, QStatusBar
+from qtpy.QtWidgets import QLabel, QStatusBar, QWidget
 
-from skeleplex.app.constants import CommandId, MenuId
 from skeleplex.app.qt import AppControlsDock, AuxiliaryViews
+from skeleplex.app.qt.main_viewer import MainViewerWidget
 
 MIN_WINDOW_WIDTH = 1000
 MIN_WINDOW_HEIGHT = 600
+
+MAIN_WINDOW_STYLE = """
+background-color: white;
+QMainWindow {
+    background-color: white;
+}
+
+QToolBar {
+    background: white;
+    border: none;
+}
+"""
 
 
 class MainWindow(QModelMainWindow):
@@ -17,7 +29,11 @@ class MainWindow(QModelMainWindow):
 
     def __init__(self, app: Application):
         super().__init__(app)
-        self.addModelToolBar(MenuId.FILE, exclude={CommandId.OPEN})
+        # set the background color
+        self.setStyleSheet(MAIN_WINDOW_STYLE)
+
+        # self.tool_bar = self.addModelToolBar(MenuId.FILE, exclude={CommandId.OPEN})
+        # self.tool_bar.setStyleSheet("background: white;")
 
         # set the central widget
         self.setCentralWidget(QLabel("I'm the Central Widget"))
@@ -46,3 +62,9 @@ class MainWindow(QModelMainWindow):
         status = QStatusBar()
         status.showMessage("I'm the Status Bar")
         self.setStatusBar(status)
+
+    def _set_main_viewer_widget(self, canvas_widget: QWidget):
+        """Set the main viewer widget."""
+        self.setCentralWidget(
+            MainViewerWidget(canvas_widget=canvas_widget, parent=self)
+        )
