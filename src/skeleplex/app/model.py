@@ -12,7 +12,12 @@ from cellier.models.nodes.points_node import PointsNode, PointsUniformMaterial
 from skeleplex.app.actions import ACTIONS
 from skeleplex.app.cellier import make_viewer_controller, make_viewer_model
 from skeleplex.app.constants import CommandId, MenuId
-from skeleplex.app.data import DataManager, SkeletonDataPaths
+from skeleplex.app.data import (
+    DataManager,
+    EdgeSelectionManager,
+    SelectionManager,
+    SkeletonDataPaths,
+)
 from skeleplex.app.qt import MainWindow
 
 log = logging.getLogger(__name__)
@@ -21,7 +26,9 @@ log = logging.getLogger(__name__)
 class SkelePlexApp(Application):
     """The main application class."""
 
-    def __init__(self, data: DataManager | None = None) -> None:
+    def __init__(
+        self, data: DataManager | None = None, selection: SelectionManager | None = None
+    ) -> None:
         super().__init__("SkelePlex")
 
         # ACTIONS is a list of Action objects.
@@ -37,9 +44,15 @@ class SkelePlexApp(Application):
 
         # make the data model
         if data is None:
-            self._data = DataManager(file_paths=SkeletonDataPaths())
-        else:
-            self._data = data
+            data = DataManager(file_paths=SkeletonDataPaths())
+        self._data = data
+
+        # make the selection model
+        if selection is None:
+            selection = SelectionManager(
+                edge=EdgeSelectionManager(enabled=False, values=set())
+            )
+        self.selection = selection
 
         # make the viewer model
         self._viewer_model, self._main_viewer_scene_id = make_viewer_model()
@@ -53,6 +66,9 @@ class SkelePlexApp(Application):
 
         # connect the data events
         self._connect_data_events()
+
+        # connect the selection events
+        self._connect_selection_events()
 
         # update the data view
         self.data.view.update()
@@ -120,12 +136,6 @@ class SkelePlexApp(Application):
 
         self.lines = lines_visual_3d
         self.points = points_visual_3d
-
-        self._viewer_controller.add_visual_callback(
-            visual_id=self.lines.id,
-            callback=self._on_click,
-            callback_type=("pointer_down",),
-        )
 
     def look_at_skeleton(self) -> None:
         """Set the camera in the main viewer to look at the skeleton.
@@ -214,3 +224,42 @@ class SkelePlexApp(Application):
 
         # event for updating the main viewer when the data paths are updated
         self.data.view.events.data.connect(self.load_main_viewer)
+
+    def _connect_selection_events(self) -> None:
+        """Connect the events for handling changes to the data selection state.
+
+        These all interface with the SelectionManager.
+        """
+        # the widget containing all the selection GUI
+        selection_widget = self._main_window.app_controls.widget().selection_box
+
+        # events for synchronizing the edge selection enabled state with the GUI.
+        selection_widget.edge_mode_box.enable_checkbox.stateChanged.connect(
+            self.selection._on_edge_enabled_update
+        )
+
+        # event for attaching/detaching the edge selection callback.
+        self.selection.edge.events.enabled.connect(
+            self._on_edge_selection_enabled_changed
+        )
+
+    def _on_edge_selection_enabled_changed(self, enabled: bool):
+        """Callback to update the viewer when the edge selection is enabled/disabled.
+
+        This attached/detaches the edge selection callback from the main viewer.
+        """
+        if enabled:
+            # attach the selection callback
+            self._viewer_controller.add_visual_callback(
+                visual_id=self.lines.id,
+                callback=self._on_click,
+                callback_type=("pointer_down",),
+            )
+
+        else:
+            # detach the selection callback
+            self._viewer_controller.remove_visual_callback(
+                visual_id=self.lines.id,
+                callback=self._on_click,
+                callback_type=("pointer_down",),
+            )

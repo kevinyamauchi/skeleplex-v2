@@ -268,3 +268,28 @@ class DataManager:
         self.file_paths.segmentation = new_data_paths.segmentation
         self.file_paths.skeleton_graph = new_data_paths.skeleton_graph
         self.load()
+
+
+class EdgeSelectionManager(EventedModel):
+    """Class to manage selection of edge in the viewer.
+
+    Parameters
+    ----------
+    enabled : bool
+        Set to true if the edge selection is enabled.
+        The default value is False.
+    values : set[tuple[int, int]] | None
+        The selected edges.
+    """
+
+    enabled: bool
+    values: set[tuple[int, int]]
+
+
+class SelectionManager(EventedModel):
+    """Class to manage selection of data in the viewer."""
+
+    edge: EdgeSelectionManager
+
+    def _on_edge_enabled_update(self, event):
+        self.edge.enabled = event > 0
