@@ -3,8 +3,8 @@
 from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import QApplication
 
-from skeleplex.app.data import DataManager, SkeletonDataPaths
-from skeleplex.app.model import SkelePlexApp
+from skeleplex.app import SkelePlexApp
+from skeleplex.app._data import DataManager, SkeletonDataPaths
 
 graph_path = "e16_skeleplex_v2.json"
 data_manager = DataManager(file_paths=SkeletonDataPaths(skeleton_graph=graph_path))

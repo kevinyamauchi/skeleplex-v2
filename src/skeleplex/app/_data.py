@@ -68,6 +68,8 @@ class DataView:
         # initialize the data
         self._edge_coordinates: np.ndarray | None = None
         self._edge_indices: np.ndarray | None = None
+        self._edge_keys: np.ndarray | None = None
+        self._highlighted_edge_keys: np.ndarray | None = None
         self._node_coordinates: np.ndarray | None = None
 
     @property
@@ -93,7 +95,7 @@ class DataView:
 
     @property
     def edge_coordinates(self) -> np.ndarray | None:
-        """Get the coordinates of the current view of the edges in the skeleton graph.
+        """Get the coordinates of the current view of the edges in the rendered graph.
 
         (n_edges x 2 x n_points_per_edge, 3) array of edge coordinates.
         """
@@ -101,11 +103,27 @@ class DataView:
 
     @property
     def edge_indices(self) -> np.ndarray | None:
-        """Get the indices of the current view of the edges in the skeleton graph.
+        """Get the indices of the current view of the edges in the rendered graph.
 
         (n_edges x 2 x n_points_per_edge,) array of edge indices.
         """
         return self._edge_indices
+
+    @property
+    def edge_keys(self) -> np.ndarray | None:
+        """Get the keys of the edge for each edge coordinate in the rendered graph.
+
+        (n_edges x 2 x n_points_per_edge,) array of edge keys.
+        """
+        return self._edge_keys
+
+    @property
+    def highlighted_edge_keys(self) -> np.ndarray | None:
+        """Get keys of the highlighted edges for each coordinate in the rendered graph.
+
+        (n_edges x 2 x n_points_per_edge,) array of highlighted edge keys.
+        """
+        return self._highlighted_edge_keys
 
     def _get_view_all(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get the view for all data."""
@@ -113,6 +131,7 @@ class DataView:
             self._data_manager.node_coordinates,
             self._data_manager.edge_coordinates,
             self._data_manager.edge_indices,
+            self._data_manager.edge_keys,
         )
 
     def update(self) -> None:
@@ -124,14 +143,69 @@ class DataView:
             # if the data isn't loaded, nothing to update
             return
         if self._mode == ViewMode.ALL:
-            self._node_coordinates, self._edge_coordinates, self._edge_indices = (
-                self._get_view_all()
-            )
+            (
+                self._node_coordinates,
+                self._edge_coordinates,
+                self._edge_indices,
+                self._edge_keys,
+            ) = self._get_view_all()
+            self._highlighted_edge_keys = np.empty((0, 2))
         else:
             raise NotImplementedError(f"View mode {self._mode} not implemented.")
 
         # Emit signal that the view data has been updated
         self.events.data.emit()
+
+
+class EdgeSelectionManager(EventedModel):
+    """Class to manage selection of edge in the viewer.
+
+    Parameters
+    ----------
+    enabled : bool
+        Set to true if the edge selection is enabled.
+        The default value is False.
+    values : set[tuple[int, int]] | None
+        The selected edges.
+    """
+
+    enabled: bool
+    values: set[tuple[int, int]]
+
+
+class SelectionManager(EventedModel):
+    """Class to manage selection of data in the viewer."""
+
+    edge: EdgeSelectionManager
+
+    def _on_edge_enabled_update(self, event):
+        self.edge.enabled = event > 0
+
+    def _on_edge_selection_update(self, event):
+        """Callback for the edge picking event from the renderer.
+
+        Parameters
+        ----------
+        event : pygfx.PointerEvent
+            The event data from the pygfx click event.
+        """
+        if ("Control" not in event.modifiers) or event.button != 1:
+            # only pick with control + LMB
+            return
+
+        # get the index of the vertex the click was close to
+        vertex_index = event.pick_info["vertex_index"]
+
+        if vertex_index in self.edge.values:
+            # if the edge is already selected, deselect it it.
+            self.edge.values.remove(vertex_index)
+        else:
+            # if the edge is not selected, select it.
+            if "Shift" not in event.modifiers:
+                # if shift is not pressed, clear the selection
+                self.edge.values.clear()
+            self.edge.values.add(vertex_index)
+        self.edge.events.values.emit(self.edge.values)
 
 
 class DataEvents(SignalGroup):
@@ -141,24 +215,58 @@ class DataEvents(SignalGroup):
 
 
 class DataManager:
-    """A class to manage data."""
+    """A class to manage data.
+
+    Parameters
+    ----------
+    file_paths : SkeletonDataPaths
+        The paths to the data files.
+    selection : SelectionManager | None
+        The selection manager.
+
+    Attributes
+    ----------
+    events : DataEvents
+        The events for the DataManager class.
+    node_coordinates : np.ndarray | None
+        The coordinates of the nodes in the skeleton graph.
+        This is None when the skeleton hasn't been loaded.
+    edge_coordinates : np.ndarray | None
+        The coordinates for rendering the edges in the skeleton graph
+        as line segments. This is None when the skeleton hasn't been loaded.
+    edge_indices : np.ndarray | None
+        The indices for the edges in the skeleton graph.
+        This is None when the skeleton hasn't been loaded.
+    edge_keys : np.ndarray | None
+        The keys for edges of each edge coordinate in the skeleton graph.
+        This is None when the skeleton hasn't been loaded.
+    """
 
     events = DataEvents()
 
     def __init__(
         self,
         file_paths: SkeletonDataPaths,
+        selection: SelectionManager | None = None,
         load_data: bool = True,
     ) -> None:
         self._file_paths = file_paths
 
         self._view = DataView(data_manager=self, mode=ViewMode.ALL)
 
+        # make the selection model
+        if selection is None:
+            selection = SelectionManager(
+                edge=EdgeSelectionManager(enabled=False, values=set()),
+            )
+        self._selection = selection
+
         # initialize the data
         self._skeleton_graph: SkeletonGraph | None = None
         self._node_coordinates: np.ndarray | None = None
         self._edge_coordinates: np.ndarray | None = None
         self._edge_indices: np.ndarray | None = None
+        self._edge_keys: np.ndarray | None = None
 
         if self.file_paths.has_paths() and load_data:
             self.load()
@@ -172,6 +280,11 @@ class DataManager:
     def view(self) -> DataView:
         """Get the current data view."""
         return self._view
+
+    @property
+    def selection(self) -> SelectionManager:
+        """Get the current data selection."""
+        return self._selection
 
     @property
     def skeleton_graph(self) -> SkeletonGraph:
@@ -201,6 +314,14 @@ class DataManager:
         (n_edges x 2 x n_points_per_edge,) array of edge indices.
         """
         return self._edge_indices
+
+    @property
+    def edge_keys(self) -> np.ndarray | None:
+        """Get the keys of the edge for each edge coordinate in the skeleton graph.
+
+        (n_edges x 2 x n_points_per_edge,) array of edge keys.
+        """
+        return self._edge_keys
 
     def load(self) -> None:
         """Load data."""
@@ -241,8 +362,9 @@ class DataManager:
 
         edge_coordinates = []
         edge_indices = []
-        for edge_index, edge_spline in enumerate(
-            self.skeleton_graph.edge_splines.values()
+        edge_keys = []
+        for edge_index, (edge_key, edge_spline) in enumerate(
+            self.skeleton_graph.edge_splines.items()
         ):
             # get the edge coordinates
             new_coordinates = line_segment_coordinates_from_spline(edge_spline)
@@ -252,8 +374,12 @@ class DataManager:
             n_coordinates = len(new_coordinates)
             edge_indices.append(np.full((n_coordinates,), edge_index))
 
+            # get the edge keys
+            edge_keys.append(np.tile(edge_key, (n_coordinates, 1)))
+
         self._edge_coordinates = np.concatenate(edge_coordinates)
         self._edge_indices = np.concatenate(edge_indices)
+        self._edge_keys = np.concatenate(edge_keys)
 
     def _update_paths_load_data(
         self,
@@ -269,27 +395,40 @@ class DataManager:
         self.file_paths.skeleton_graph = new_data_paths.skeleton_graph
         self.load()
 
+    def _on_edge_selection_click(self, event, click_source: str = "data"):
+        """Callback for the edge picking event from the renderer.
 
-class EdgeSelectionManager(EventedModel):
-    """Class to manage selection of edge in the viewer.
+        Parameters
+        ----------
+        event : pygfx.PointerEvent
+            The event data from the pygfx click event.
+        click_source : str
+            The source of the click event. Should be either "data" (the main visual)
+            or "highlight" (the highlight visual).
+        """
+        if ("Control" not in event.modifiers) or event.button != 1:
+            # only pick with control + LMB
+            return
 
-    Parameters
-    ----------
-    enabled : bool
-        Set to true if the edge selection is enabled.
-        The default value is False.
-    values : set[tuple[int, int]] | None
-        The selected edges.
-    """
+        # get the index of the vertex the click was close to
+        vertex_index = event.pick_info["vertex_index"]
 
-    enabled: bool
-    values: set[tuple[int, int]]
+        # get the edge key from the vertex index
+        if click_source == "data":
+            edge_key_numpy = self.view.edge_keys[vertex_index]
+            edge_key = (int(edge_key_numpy[0]), int(edge_key_numpy[1]))
+        elif click_source == "highlight":
+            edge_key = tuple(self.view.highlighted_edge_keys[vertex_index])
+        else:
+            raise ValueError(f"Unknown click source: {click_source}")
 
-
-class SelectionManager(EventedModel):
-    """Class to manage selection of data in the viewer."""
-
-    edge: EdgeSelectionManager
-
-    def _on_edge_enabled_update(self, event):
-        self.edge.enabled = event > 0
+        if edge_key in self.selection.edge.values:
+            # if the edge is already selected, deselect it it.
+            self.selection.edge.values.remove(edge_key)
+        else:
+            # if the edge is not selected, select it.
+            if "Shift" not in event.modifiers:
+                # if shift is not pressed, clear the selection
+                self.selection.edge.values.clear()
+            self.selection.edge.values.add(edge_key)
+        self.selection.edge.events.values.emit(self.selection.edge.values)

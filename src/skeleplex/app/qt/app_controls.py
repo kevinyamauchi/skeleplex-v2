@@ -17,7 +17,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from skeleplex.app.data import SkeletonDataPaths
+from skeleplex.app._data import SkeletonDataPaths
 from skeleplex.app.qt.flat_group_box import FlatHGroupBox, FlatVGroupBox
 from skeleplex.app.qt.styles import (
     DOCK_WIDGET_STYLE,
@@ -114,6 +114,13 @@ class DataSelectorWidget(FlatHGroupBox):
         # Add the widgets
         self.add_widget(self.edge_mode_box)
         self.add_widget(self.node_mode_box)
+
+    def _on_edge_selection_change(self, event):
+        """Update the GUI when the selected edges change."""
+        if len(event) == 0:
+            self.edge_mode_box.selection_box.setText("")
+        else:
+            self.edge_mode_box.selection_box.setText(str(event))
 
 
 class AppControlsWidget(QWidget):
