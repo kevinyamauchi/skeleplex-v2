@@ -124,10 +124,20 @@ def get_next_node_key(graph: nx.Graph) -> int:
     -------
     int
         The next available node key.
-        This is the maximum node key + 1.
         If there are no nodes, the function returns 0.
     """
-    return int(np.max(graph.nodes)) + 1 if graph.nodes else 0
+
+    node_numbers = list(graph.nodes)
+    node_numbers.sort()
+
+    if len(node_numbers) == 0:
+        return 0
+    
+    free_node = node_numbers[0] + 1
+    while free_node in node_numbers:
+        node_numbers.pop(0)
+        free_node = node_numbers[0] + 1  
+    return free_node 
 
 
 def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:

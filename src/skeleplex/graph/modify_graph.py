@@ -1,7 +1,7 @@
 import numpy as np
 import networkx as nx
 from typing import List, Tuple, Dict, Any
-from skeleplex.graph.skeleton_graph import SkeletonGraph
+from skeleplex.graph.skeleton_graph import SkeletonGraph, get_next_node_key
 import warnings
 import logging
 from skeleplex.graph.spline import B3Spline
@@ -182,3 +182,177 @@ def length_pruning(SkeletonGraph_obj:SkeletonGraph, length_threshold:int):
                     except:
                         logger.info(f'could not delete{edge}')
                         continue
+
+
+def split_edge(SkeletonGraph_obj:SkeletonGraph,
+               edge_to_split_ID:Tuple,
+               split_pos:float):
+        """Split an edge at a given position.
+        
+        Parameters
+        ----------
+        SkeletonGraph_obj : SkeletonGraph
+            The skeleton graph object.
+        edge_to_split_ID : Tuple
+            The edge to split.
+        split_pos : float
+            The position to split the edge at. Normalized between 0 and 1.
+        """
+
+        #test if edge is in tree
+        if edge_to_split_ID not in SkeletonGraph_obj.graph.edges:
+              ValueError(f"Edge {edge_to_split_ID} not in graph.")
+        graph = SkeletonGraph_obj.graph.copy()
+        spline =  SkeletonGraph_obj.graph.edges[edge_to_split_ID][EDGE_SPLINE_KEY]
+        edge_coordinates = graph.edges[edge_to_split_ID][EDGE_COORDINATES_KEY]
+        coordinate_to_split = spline.eval(split_pos)
+        split_index = np.argmin(
+             np.linalg.norm(edge_coordinates - coordinate_to_split, axis=1)
+             )
+        new_node_number = get_next_node_key(graph)
+        graph.add_node(new_node_number, node_coordinate = coordinate_to_split)
+        new_edge_coords1 = edge_coordinates[:split_index+1]
+        if len(new_edge_coords1) < 4:
+             logger.warning(
+                 f"Edge {edge_to_split_ID} is to short to split at {split_pos}."
+                 " Approximate edge as line."
+             )
+             new_edge_coords1 = np.linspace(
+                  new_edge_coords1[0], new_edge_coords1[-1], 5
+                  
+             )
+        new_edge_dict1 = {EDGE_COORDINATES_KEY: new_edge_coords1,
+                        START_NODE_KEY: new_node_number, 
+                        END_NODE_KEY: edge_to_split_ID[1], 
+                        EDGE_SPLINE_KEY: B3Spline.from_points(
+                                new_edge_coords1,
+                              )
+                              }
+        graph.add_edge(edge_to_split_ID[0], new_node_number, **new_edge_dict1)
+
+        #add second piece
+        new_edge_coords2 = edge_coordinates[split_index:]
+        if len(new_edge_coords2) < 4:
+             logger.warning(
+                 f"Edge {edge_to_split_ID} is to short to split at {split_pos}."
+                 " Approximate edge as line."
+             )
+             new_edge_coords2 = np.linspace(
+                  new_edge_coords2[0], new_edge_coords2[-1], 5
+             )
+
+        new_edge_dict2 = {EDGE_COORDINATES_KEY: new_edge_coords2,
+                        START_NODE_KEY: edge_to_split_ID[0], 
+                        END_NODE_KEY: new_node_number, 
+                        EDGE_SPLINE_KEY: B3Spline.from_points(
+                                new_edge_coords2,
+                              )
+                              }
+        
+
+        graph.add_edge(new_node_number, edge_to_split_ID[1], **new_edge_dict2)
+
+        graph.remove_edge(*edge_to_split_ID)
+
+        SkeletonGraph_obj.graph = graph
+
+
+def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
+                                 node:int,
+                                 edge_to_shorten:Tuple,
+                                 edge_to_elongate:Tuple,
+                                 edge_to_remodel:Tuple,
+                                 distance):
+    """
+    Moves the branch point along the edge_to_shorten by distance and 
+    splits the edge_to_shorten at the new position. The second daughter edge is
+    remoddled as a straight line.
+
+    Parameters
+    ----------
+    SkeletonGraph_obj : SkeletonGraph
+        The skeleton graph object.
+    node : int
+        The node to move.
+    edge_to_shorten : Tuple
+        The edge to shorten.
+    edge_to_elongate : Tuple
+        The edge to elongate.
+    edge_to_remodel : Tuple
+        The edge to remodel.
+    distance : float
+        The distance to move the node along the edge_to_shorten.
+        Normalized between 0 and 1.
+    """
+    graph = SkeletonGraph_obj.graph
+    spline_to_shorten = graph.edges[edge_to_shorten][EDGE_SPLINE_KEY]
+    #move branch point
+    point_on_edge_to_shorten = spline_to_shorten.eval(distance)
+    
+    #split edge_coordinates into two parts at the point_on_in_edge
+    edge_to_shoorten_coords = graph.edges[edge_to_shorten][EDGE_COORDINATES_KEY]
+    #rather get the closest point
+    idx = np.argmin(
+        np.linalg.norm(edge_to_shoorten_coords - point_on_edge_to_shorten, axis=1)
+        )
+    #split
+    edge_coordinates_1 = edge_to_shoorten_coords[:idx+1]
+    edge_coordinates_2 = edge_to_shoorten_coords[idx:]
+    
+    #check if edge is long enough
+    if len(edge_coordinates_1) < 4:
+        logger.warning(
+            f"Edge {edge_to_shorten} is to short to split at {distance}."
+            " Approximate edge as line."
+        )
+        edge_coordinates_1 = np.linspace(
+            edge_coordinates_1[0], edge_coordinates_1[-1], 5
+        )
+
+
+
+    out_edge_coordinates = graph.edges[edge_to_elongate][EDGE_COORDINATES_KEY]
+
+    new_node_pos = edge_to_shoorten_coords[idx]
+
+    new_out_edge_coordinates = np.concatenate(
+        (edge_coordinates_2,
+         out_edge_coordinates)
+         )
+    
+    #filter duplicates
+    new_out_edge_coordinates, indices = np.unique(new_out_edge_coordinates,
+                                                  axis=0,
+                                                  return_index=True
+                                                  )
+    new_out_edge_coordinates = new_out_edge_coordinates[np.argsort(indices)]
+
+    new_in_edge_coordinates = edge_coordinates_1
+
+    #update edges 
+    graph.edges[edge_to_shorten][EDGE_COORDINATES_KEY] = new_in_edge_coordinates
+    graph.edges[edge_to_elongate][EDGE_COORDINATES_KEY] = new_out_edge_coordinates
+    graph.nodes[node][NODE_COORDINATE_KEY] = new_node_pos
+
+    #update splines
+    graph.edges[edge_to_shorten][EDGE_SPLINE_KEY] = (
+        B3Spline.from_points(new_in_edge_coordinates)
+    )
+    graph.edges[edge_to_elongate][EDGE_SPLINE_KEY] = (
+        B3Spline.from_points(new_out_edge_coordinates)
+    )
+
+    #draw new edge for the other out edge
+    out_edge_node2 = edge_to_remodel[1]
+    out_edge_node2_pos = graph.nodes[out_edge_node2][NODE_COORDINATE_KEY]
+    new_out_edge_coordinates = np.linspace(new_node_pos, out_edge_node2_pos, 10)
+
+    #update edge
+    graph.edges[edge_to_remodel][EDGE_COORDINATES_KEY] = new_out_edge_coordinates
+    graph.edges[edge_to_remodel][EDGE_SPLINE_KEY] = (
+        B3Spline.from_points(new_out_edge_coordinates)
+        )
+    
+    #update graph
+    SkeletonGraph_obj.graph = graph
+
