@@ -3,7 +3,7 @@
 from app_model.types import Action, KeyBindingRule, KeyCode, KeyMod, MenuRule
 
 from . import functions
-from .constants import CommandId, MenuId
+from ._constants import CommandId, MenuId
 
 ACTIONS: list[Action] = [
     # Action(
