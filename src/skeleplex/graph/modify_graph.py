@@ -312,7 +312,9 @@ def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
 
 
     out_edge_coordinates = graph.edges[edge_to_elongate][EDGE_COORDINATES_KEY]
-
+    
+    #maybe it makes sense to take the sampled point of the spline, 
+    #instead it takes the underlying coordinates. Could be more robust
     new_node_pos = edge_to_shoorten_coords[idx]
 
     new_out_edge_coordinates = np.concatenate(
