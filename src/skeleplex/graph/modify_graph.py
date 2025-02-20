@@ -10,10 +10,10 @@ from skeleplex.graph.constants import (
     EDGE_SPLINE_KEY,
     NODE_COORDINATE_KEY,
     GENERATION_KEY,
-    VALIDATED_KEY,
     START_NODE_KEY,
     END_NODE_KEY,
-    LENGTH_KEY
+    LENGTH_KEY,
+    VALIDATION_KEY
 
 )
 
@@ -23,12 +23,35 @@ logging.basicConfig(level=logging.INFO)
 def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
     """merge edges in graph and add edge attributes. 
     n1 is merged with n2. v1 is removed.
+    
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The graph to merge the edges in.
+    n1 : int
+        The start node of the first edge.
+    v1 : int
+        The end node of the first edge and the start node of the second edge.
+        This node is removed.
+    n2 : int
+        The end node of the second edge.
+    
+    Returns
+    -------
+    nx.DiGraph
+        The graph with the merged edge.
+
+
+
     """
     graph = graph.copy()
 
     start_node = graph.nodes(data=True)[n1][NODE_COORDINATE_KEY]
     end_node = graph.nodes(data=True)[n2][NODE_COORDINATE_KEY]
     middle_node = graph.nodes(data=True)[v1][NODE_COORDINATE_KEY]
+
+    edge1 = (start_node, middle_node)
+    edge2 = (middle_node, end_node)
 
 
     edge_attributes1 = graph.get_edge_data(n1,v1)
@@ -39,7 +62,7 @@ def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
     merge_edge = (n1,n2)
     merge_attributes = {}
     for key in edge_attributes1:
-        if key == 'validated':
+        if key == VALIDATION_KEY:
             if edge_attributes1[key] and edge_attributes2[key] == True:
                 merge_attributes[key] = True
             else:
@@ -56,20 +79,20 @@ def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
             #but just to be sure
             if (np.allclose(points1[0], start_node) & 
                 np.allclose(points2[0], middle_node)):
-                logger.info('no flip')
+                logger.info('None of the edges need to be flipped')
                 spline_points = np.vstack((points1, points2))
                 
             elif (np.allclose(points1[-1], start_node) &
                    np.allclose(points2[0], middle_node)):
-                logger.info('flip 1')
+                logger.info(f'flip edge {edge1}')
                 spline_points = np.vstack((np.flip(points1, axis = 0), points2))
             elif (np.allclose(points1[0], start_node) & 
                   np.allclose(points2[-1], middle_node)):
-                logger.info('flip 2')
+                logger.info(f'flip {edge2}')
                 spline_points = np.vstack((points1, np.flip(points2, axis = 0)))
             elif (np.allclose(points1[-1], start_node) & 
                   np.allclose(points2[-1], middle_node)):
-                logger.info('flip both')
+                logger.info(f'flip {edge1} and {edge2}')
                 spline_points = np.vstack((np.flip(points1, axis = 0),
                                             np.flip(points2, axis = 0)))    
             else:
@@ -95,7 +118,7 @@ def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
         if key == LENGTH_KEY:
             merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
 
-        if key not in  [VALIDATED_KEY, 
+        if key not in  [VALIDATION_KEY, 
                             EDGE_COORDINATES_KEY, 
                             EDGE_SPLINE_KEY, 
                             START_NODE_KEY, 
@@ -108,18 +131,38 @@ def merge_edge(graph:nx.DiGraph, n1:int, v1:int, n2:int):
     graph.add_edge(*merge_edge, **merge_attributes)
     return graph
 
-def delete_edge(SkeletonGraph_obj:SkeletonGraph, edge: Tuple[int, int]):
-        """delete edge."""
+def delete_edge(skeleton_graph:SkeletonGraph, edge: Tuple[int, int]):
+        """delete edge.
+        To maintain a dichotomous structure, the edge is deleted and the 
+        resulting degree 2 node is merged with its neighbors.
+
+                "Delete (2,4)"
+        1               1
+        |               |
+        |               |
+        2------4   -->  |
+        |               | 
+        |               |
+        3               3
+        
+        
+        Parameters
+        ----------
+        skeleton_graph : SkeletonGraph
+            The graph to delete the edge from.
+        edge : Tuple[int, int]
+            The edge to delete.
+        """
 
         #check if directed
-        if not SkeletonGraph_obj.graph.is_directed():
+        if not skeleton_graph.graph.is_directed():
             ValueError('Graph is not directed. Convert to directed graph.')
         #copy graph
-        graph = SkeletonGraph_obj.graph.copy()
+        graph = skeleton_graph.graph.copy()
         graph.remove_edge(*edge)
 
         #detect all changes
-        changed_edges = set(SkeletonGraph_obj.graph.edges) - set(graph.edges)
+        changed_edges = set(skeleton_graph.graph.edges) - set(graph.edges)
         for edge in changed_edges:
             for node in edge:
                 if graph.degree(node) == 0:
@@ -138,16 +181,16 @@ def delete_edge(SkeletonGraph_obj:SkeletonGraph, edge: Tuple[int, int]):
 
 
         #check if graph is still connected, if not remove orphaned nodes
-        SkeletonGraph_obj.graph.remove_nodes_from(list(nx.isolates(SkeletonGraph_obj.graph)))
-        SkeletonGraph_obj.graph = graph
+        skeleton_graph.graph.remove_nodes_from(list(nx.isolates(skeleton_graph.graph)))
+        skeleton_graph.graph = graph
 
 
-def length_pruning(SkeletonGraph_obj:SkeletonGraph, length_threshold:int):
+def length_pruning(skeleton_graph:SkeletonGraph, length_threshold:int):
         """Prune all edges with length below threshold
         
         Parameters
         ----------
-        graph : nx.Graph
+        skeleton_graph : SkeletonGraph
             The graph to prune.
         length_threshold : int
             The threshold for the length of the edges.
@@ -155,43 +198,43 @@ def length_pruning(SkeletonGraph_obj:SkeletonGraph, length_threshold:int):
         
         """
         #check if directed
-        if not SkeletonGraph_obj.graph.is_directed():
+        if not skeleton_graph.graph.is_directed():
             ValueError('Graph is not directed. Convert to directed graph.')
 
-        graph = SkeletonGraph_obj.graph
+        graph = skeleton_graph.graph
         g_unmodified = graph.copy()
 
         #check if length is already computed
         if  len(nx.get_edge_attributes(graph, LENGTH_KEY)) == 0:
-            len_dict = SkeletonGraph_obj.compute_branch_lengths()
+            len_dict = skeleton_graph.compute_branch_lengths()
             nx.set_edge_attributes(graph, len_dict, LENGTH_KEY)
 
         for node, degree in g_unmodified.degree():
-            if (degree == 1) and (node != SkeletonGraph_obj.origin):
+            if (degree == 1) and (node != skeleton_graph.origin):
                 edge = list(graph.in_edges(node))[0]
                 path_length = graph.edges[edge[0], edge[1]].get(LENGTH_KEY)
                 # start_node = edge[0]
                 if path_length < length_threshold:
                     #chek if edge still exists in orginal graph
-                    if edge not in SkeletonGraph_obj.graph.edges:
+                    if edge not in skeleton_graph.graph.edges:
                         continue
 
                     try:
-                        delete_edge(SkeletonGraph_obj, edge)
+                        delete_edge(skeleton_graph, edge)
                         logger.info(f'deleted{edge}')
                     except:
                         logger.info(f'could not delete{edge}')
                         continue
 
 
-def split_edge(SkeletonGraph_obj:SkeletonGraph,
+def split_edge(skeleton_graph:SkeletonGraph,
                edge_to_split_ID:Tuple,
                split_pos:float):
         """Split an edge at a given position.
         
         Parameters
         ----------
-        SkeletonGraph_obj : SkeletonGraph
+        skeleton_graph : SkeletonGraph
             The skeleton graph object.
         edge_to_split_ID : Tuple
             The edge to split.
@@ -200,10 +243,10 @@ def split_edge(SkeletonGraph_obj:SkeletonGraph,
         """
 
         #test if edge is in tree
-        if edge_to_split_ID not in SkeletonGraph_obj.graph.edges:
+        if edge_to_split_ID not in skeleton_graph.graph.edges:
               ValueError(f"Edge {edge_to_split_ID} not in graph.")
-        graph = SkeletonGraph_obj.graph.copy()
-        spline =  SkeletonGraph_obj.graph.edges[edge_to_split_ID][EDGE_SPLINE_KEY]
+        graph = skeleton_graph.graph.copy()
+        spline =  skeleton_graph.graph.edges[edge_to_split_ID][EDGE_SPLINE_KEY]
         edge_coordinates = graph.edges[edge_to_split_ID][EDGE_COORDINATES_KEY]
         coordinate_to_split = spline.eval(split_pos)
         split_index = np.argmin(
@@ -254,10 +297,10 @@ def split_edge(SkeletonGraph_obj:SkeletonGraph,
 
         graph.remove_edge(*edge_to_split_ID)
 
-        SkeletonGraph_obj.graph = graph
+        skeleton_graph.graph = graph
 
 
-def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
+def move_branch_point_along_edge(skeleton_graph:SkeletonGraph,
                                  node:int,
                                  edge_to_shorten:Tuple,
                                  edge_to_elongate:Tuple,
@@ -270,7 +313,7 @@ def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
 
     Parameters
     ----------
-    SkeletonGraph_obj : SkeletonGraph
+    skeleton_graph : SkeletonGraph
         The skeleton graph object.
     node : int
         The node to move.
@@ -284,7 +327,7 @@ def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
         The distance to move the node along the edge_to_shorten.
         Normalized between 0 and 1.
     """
-    graph = SkeletonGraph_obj.graph
+    graph = skeleton_graph.graph
     spline_to_shorten = graph.edges[edge_to_shorten][EDGE_SPLINE_KEY]
     #move branch point
     point_on_edge_to_shorten = spline_to_shorten.eval(distance)
@@ -312,7 +355,7 @@ def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
 
 
     out_edge_coordinates = graph.edges[edge_to_elongate][EDGE_COORDINATES_KEY]
-    
+
     #maybe it makes sense to take the sampled point of the spline, 
     #instead it takes the underlying coordinates. Could be more robust
     new_node_pos = edge_to_shoorten_coords[idx]
@@ -356,5 +399,5 @@ def move_branch_point_along_edge(SkeletonGraph_obj:SkeletonGraph,
         )
     
     #update graph
-    SkeletonGraph_obj.graph = graph
+    skeleton_graph.graph = graph
 

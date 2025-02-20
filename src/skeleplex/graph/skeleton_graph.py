@@ -12,6 +12,7 @@ from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
     EDGE_SPLINE_KEY,
     NODE_COORDINATE_KEY,
+    LENGTH_KEY
 )
 from skeleplex.graph.image_to_graph import image_to_graph_skan
 from skeleplex.graph.spline import B3Spline
@@ -288,7 +289,11 @@ class SkeletonGraph:
     def from_graph(
         cls, graph, edge_coordinate_key, node_coordinate_key
     ) -> "SkeletonGraph":
-        """Return a SkeletonGraph from a graph.
+        """Return a SkeletonGraph from a networkx graph.
+        The edges ans nodes need to have an attribute with the specified keys 
+        containing the coordinates of the nodes and edges and an np.ndarray.
+        Requires edge coordinates of length greater than 4 
+        to successfully create a spline. 
 
         Parameters
         ----------
@@ -341,10 +346,13 @@ class SkeletonGraph:
         return self.graph
 
     def compute_branch_lengths(self) -> dict:
-        """Return a dictionary of edge lengths."""
+        """Return a dictionary of edge lengths.
+        The keys of the dictionary are the edge tuples, the values are arc lengths
+        of the fitted splines. Units will be the same as voxel scale.
+        """
         edge_lengths = {}
         for u, v, attr in self.graph.edges(data=True):
             edge_lengths[(u, v)] = attr[EDGE_SPLINE_KEY].arc_length
 
-        nx.set_edge_attributes(self.graph, edge_lengths, "length")
+        nx.set_edge_attributes(self.graph, edge_lengths, LENGTH_KEY)
         return edge_lengths

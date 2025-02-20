@@ -9,6 +9,6 @@ EDGE_COORDINATES_KEY = "path"
 START_NODE_KEY = "start_node"
 END_NODE_KEY = "end_node"
 GENERATION_KEY = "level"
-VALIDATED_KEY = "validated"
+VALIDATION_KEY = "validated"
 LENGTH_KEY = "length"
 
