@@ -24,6 +24,7 @@ def simple_t_skeleton_graph():
     graph.add_node(3, **{NODE_COORDINATE_KEY: np.array([20, 10, 0])})
 
     # add edge coordinates
+    # flipped edge
     graph.add_edge(
         0, 1, **{EDGE_COORDINATES_KEY: np.linspace([10, 0, 0], [10, 10, 0], 4)}
     )

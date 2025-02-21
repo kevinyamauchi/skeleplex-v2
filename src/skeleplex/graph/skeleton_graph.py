@@ -189,6 +189,55 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     return graph
 
 
+def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
+    """Checks if the splines are oriented correctly.
+
+    If the beginning of the spline is closer to the end node than the start node,
+    it gets flipped.
+    Also checks if the edge coordinates are aligend with the spline.
+    This only checks, if the splines are correctly connected to the nodes,
+    not the order in the Graph. Best used on a directed graph.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The graph to orient the splines in.
+
+    Returns
+    -------
+    nx.DiGraph
+        The graph with the splines oriented correctly.
+
+    """
+    edge_spline_dict = {}
+    edge_coordinates_dict = {}
+
+    for u, v, attr in graph.edges(data=True):
+        spline = attr[EDGE_SPLINE_KEY]
+        u_coord = graph.nodes[u][NODE_COORDINATE_KEY]
+        spline_coordinates = spline.eval(np.array([0, 1]))
+        # check if spline evaluation is closer to the start or end node
+        if np.linalg.norm(u_coord - spline_coordinates[0]) > np.linalg.norm(
+            u_coord - spline_coordinates[-1]
+        ):
+            logger.info(f"Flipped spline of edge ({u,v}).")
+            edge_coordinates = attr[EDGE_COORDINATES_KEY]
+            # check if path is inverse to spline
+            if np.linalg.norm(
+                edge_coordinates[0] - spline_coordinates[0]
+            ) > np.linalg.norm(edge_coordinates[-1] - spline_coordinates[-1]):
+                edge_coordinates = edge_coordinates[::-1]
+
+            flipped_spline, flipped_cords = spline.flip_spline(edge_coordinates)
+            edge_spline_dict[(u, v)] = flipped_spline
+            edge_coordinates_dict[(u, v)] = flipped_cords
+
+    nx.set_edge_attributes(graph, edge_spline_dict, EDGE_SPLINE_KEY)
+    nx.set_edge_attributes(graph, edge_coordinates_dict, EDGE_COORDINATES_KEY)
+
+    return graph
+
+
 class SkeletonGraph:
     """Data class for a skeleton graph.
 
