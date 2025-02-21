@@ -40,6 +40,7 @@ dependencies = [
     "networkx>=3.4",
     "numba>=0.60.0",
     "numpy>=2.0.2",
+    "rich>=13.9.4",
     "scikit-image>=0.24.0",
     "skan>=0.12.2",
     "splinebox>=0.3.0",
@@ -50,6 +51,8 @@ dependencies = [
 [project.optional-dependencies]
 # for visualization
 napari = ["napari[all]"]
+pygfx = ["pygfx", "PySide6"]
+viz = ["app-model", "superqt"]
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
 # add anything else you like to have in your dev environment here
