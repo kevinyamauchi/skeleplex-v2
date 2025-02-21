@@ -11,8 +11,8 @@ from splinebox.spline_curves import _prepared_dict_for_constructor
 from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
     EDGE_SPLINE_KEY,
+    LENGTH_KEY,
     NODE_COORDINATE_KEY,
-    LENGTH_KEY
 )
 from skeleplex.graph.image_to_graph import image_to_graph_skan
 from skeleplex.graph.spline import B3Spline
@@ -127,18 +127,17 @@ def get_next_node_key(graph: nx.Graph) -> int:
         The next available node key.
         If there are no nodes, the function returns 0.
     """
-
     node_numbers = list(graph.nodes)
     node_numbers.sort()
 
     if len(node_numbers) == 0:
         return 0
-    
+
     free_node = node_numbers[0] + 1
     while free_node in node_numbers:
         node_numbers.pop(0)
-        free_node = node_numbers[0] + 1  
-    return free_node 
+        free_node = node_numbers[0] + 1
+    return free_node
 
 
 def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
@@ -188,6 +187,7 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     nx.set_edge_attributes(graph, edge_coordinates_dict, EDGE_COORDINATES_KEY)
 
     return graph
+
 
 class SkeletonGraph:
     """Data class for a skeleton graph.
@@ -290,10 +290,11 @@ class SkeletonGraph:
         cls, graph, edge_coordinate_key, node_coordinate_key
     ) -> "SkeletonGraph":
         """Return a SkeletonGraph from a networkx graph.
-        The edges ans nodes need to have an attribute with the specified keys 
+
+        The edges ans nodes need to have an attribute with the specified keys
         containing the coordinates of the nodes and edges and an np.ndarray.
-        Requires edge coordinates of length greater than 4 
-        to successfully create a spline. 
+        Requires edge coordinates of length greater than 4
+        to successfully create a spline.
 
         Parameters
         ----------
@@ -347,6 +348,7 @@ class SkeletonGraph:
 
     def compute_branch_lengths(self) -> dict:
         """Return a dictionary of edge lengths.
+
         The keys of the dictionary are the edge tuples, the values are arc lengths
         of the fitted splines. Units will be the same as voxel scale.
         """

@@ -11,4 +11,3 @@ END_NODE_KEY = "end_node"
 GENERATION_KEY = "level"
 VALIDATION_KEY = "validated"
 LENGTH_KEY = "length"
-

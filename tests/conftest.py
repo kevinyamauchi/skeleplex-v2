@@ -144,6 +144,7 @@ def simple_t_with_flipped_spline():
 
     return graph
 
+
 @pytest.fixture
 def straight_edge_graph():
     graph = nx.DiGraph()
@@ -163,5 +164,5 @@ def straight_edge_graph():
         graph.edges[edge][EDGE_SPLINE_KEY] = B3Spline.from_points(
             graph.edges[edge][EDGE_COORDINATES_KEY]
         )
-    
+
     return SkeletonGraph(graph=graph)

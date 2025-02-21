@@ -74,7 +74,7 @@ def test_get_next_node_id():
     assert get_next_node_key(graph) == 1
 
     # add multiple nodes to the graph
-    graph.add_nodes_from([1,2,3,10, 23, 65])
+    graph.add_nodes_from([1, 2, 3, 10, 23, 65])
     assert get_next_node_key(graph) == 4
 
 
