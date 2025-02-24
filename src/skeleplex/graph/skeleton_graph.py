@@ -305,14 +305,15 @@ class SkeletonGraph:
         node_coordinate_key : str
             The key to use for the node coordinates.
         """
-        for _, _, attr in graph.edges(data=True):
+        graph_mod = graph.copy()
+        for _, _, attr in graph_mod.edges(data=True):
             attr[EDGE_COORDINATES_KEY] = attr.pop(edge_coordinate_key)
             # add spline
             spline = B3Spline.from_points(attr[EDGE_COORDINATES_KEY])
             attr[EDGE_SPLINE_KEY] = spline
-        for _, node_data in graph.nodes(data=True):
+        for _, node_data in graph_mod.nodes(data=True):
             node_data[NODE_COORDINATE_KEY] = node_data.pop(node_coordinate_key)
-        return cls(graph=graph)
+        return cls(graph=graph_mod)
 
     def __eq__(self, other: "SkeletonGraph"):
         """Check if two SkeletonGraph objects are equal."""
