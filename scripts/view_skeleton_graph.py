@@ -71,6 +71,7 @@ for _u, _v, edge_data in skeleton_graph.edges(data=True):
 
 edges = np.array(edges)  # Convert to NumPy array
 
+
 # Visualize in Napari
 viewer = napari.Viewer()
 
