@@ -144,3 +144,26 @@ def simple_t_with_flipped_spline():
     )
 
     return graph
+
+
+@pytest.fixture
+def straight_edge_graph():
+    graph = nx.DiGraph()
+
+    graph.add_node(0, **{NODE_COORDINATE_KEY: np.array([10, 0, 0])})
+    graph.add_node(1, **{NODE_COORDINATE_KEY: np.array([20, 0, 0])})
+    graph.add_node(2, **{NODE_COORDINATE_KEY: np.array([30, 0, 0])})
+
+    graph.add_edge(
+        0, 1, **{EDGE_COORDINATES_KEY: np.linspace([10, 0, 0], [20, 0, 0], 4)}
+    )
+    graph.add_edge(
+        1, 2, **{EDGE_COORDINATES_KEY: np.linspace([20, 0, 0], [30, 0, 0], 4)}
+    )
+
+    for edge in graph.edges:
+        graph.edges[edge][EDGE_SPLINE_KEY] = B3Spline.from_points(
+            graph.edges[edge][EDGE_COORDINATES_KEY]
+        )
+
+    return SkeletonGraph(graph=graph)

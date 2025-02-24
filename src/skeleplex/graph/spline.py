@@ -56,6 +56,10 @@ class B3Spline:
         positions_t = self.model.arc_length_to_parameter(
             positions * self.arc_length, atol=atol
         )
+        # For single values, splinebox's eval expects a float
+        # This recasts the value to a float if positions_t is a single value
+        if positions_t.ndim == 0:
+            positions_t = positions_t.tolist()
         return self.model.eval(positions_t, derivative=derivative)
 
     def moving_frame(

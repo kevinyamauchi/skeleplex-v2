@@ -11,6 +11,7 @@ from splinebox.spline_curves import _prepared_dict_for_constructor
 from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
     EDGE_SPLINE_KEY,
+    LENGTH_KEY,
     NODE_COORDINATE_KEY,
 )
 from skeleplex.graph.image_to_graph import image_to_graph_skan
@@ -124,10 +125,68 @@ def get_next_node_key(graph: nx.Graph) -> int:
     -------
     int
         The next available node key.
-        This is the maximum node key + 1.
         If there are no nodes, the function returns 0.
     """
-    return int(np.max(graph.nodes)) + 1 if graph.nodes else 0
+    node_numbers = list(graph.nodes)
+    node_numbers.sort()
+
+    if len(node_numbers) == 0:
+        return 0
+
+    free_node = node_numbers[0] + 1
+    while free_node in node_numbers:
+        node_numbers.pop(0)
+        free_node = node_numbers[0] + 1
+    return free_node
+
+
+def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
+    """Checks if the splines are oriented correctly.
+
+    If the beginning of the spline is closer to the end node than the start node,
+    it gets flipped.
+    Also checks if the edge coordinates are aligend with the spline.
+    This only checks, if the splines are correctly connected to the nodes,
+    not the order in the Graph. Best used on a directed graph.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The graph to orient the splines in.
+
+    Returns
+    -------
+    nx.DiGraph
+        The graph with the splines oriented correctly.
+
+    """
+    edge_spline_dict = {}
+    edge_coordinates_dict = {}
+
+    for u, v, attr in graph.edges(data=True):
+        spline = attr[EDGE_SPLINE_KEY]
+        u_coord = graph.nodes[u][NODE_COORDINATE_KEY]
+        spline_coordinates = spline.eval(np.array([0, 1]))
+        # check if spline evaluation is closer to the start or end node
+        if np.linalg.norm(u_coord - spline_coordinates[0]) > np.linalg.norm(
+            u_coord - spline_coordinates[-1]
+        ):
+            logger.info(f"Flipped spline of edge ({u,v}).")
+            edge_coordinates = attr[EDGE_COORDINATES_KEY]
+            # check if path is inverse to spline
+            if np.linalg.norm(
+                edge_coordinates[0] - spline_coordinates[0]
+            ) > np.linalg.norm(edge_coordinates[-1] - spline_coordinates[-1]):
+                edge_coordinates = edge_coordinates[::-1]
+
+            flipped_spline, flipped_cords = spline.flip_spline(edge_coordinates)
+            edge_spline_dict[(u, v)] = flipped_spline
+            edge_coordinates_dict[(u, v)] = flipped_cords
+
+    nx.set_edge_attributes(graph, edge_spline_dict, EDGE_SPLINE_KEY)
+    nx.set_edge_attributes(graph, edge_coordinates_dict, EDGE_COORDINATES_KEY)
+
+    return graph
 
 
 def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
@@ -275,6 +334,35 @@ class SkeletonGraph:
         )
         return cls(graph=graph)
 
+    @classmethod
+    def from_graph(
+        cls, graph, edge_coordinate_key, node_coordinate_key
+    ) -> "SkeletonGraph":
+        """Return a SkeletonGraph from a networkx graph.
+
+        The edges and nodes need to have an attribute with the specified keys
+        containing the coordinates of the nodes and edges and an np.ndarray.
+        Requires edge coordinates of length greater than 4
+        to successfully create a spline.
+
+        Parameters
+        ----------
+        graph : nx.Graph
+            The graph to convert to a SkeletonGraph.
+        edge_coordinate_key : str
+            The key to use for the edge coordinates.
+        node_coordinate_key : str
+            The key to use for the node coordinates.
+        """
+        for _, _, attr in graph.edges(data=True):
+            attr[EDGE_COORDINATES_KEY] = attr.pop(edge_coordinate_key)
+            # add spline
+            spline = B3Spline.from_points(attr[EDGE_COORDINATES_KEY])
+            attr[EDGE_SPLINE_KEY] = spline
+        for _, node_data in graph.nodes(data=True):
+            node_data[NODE_COORDINATE_KEY] = node_data.pop(node_coordinate_key)
+        return cls(graph=graph)
+
     def __eq__(self, other: "SkeletonGraph"):
         """Check if two SkeletonGraph objects are equal."""
         if set(self.nodes) != set(other.nodes):
@@ -290,6 +378,7 @@ class SkeletonGraph:
         """Return a directed graph from the skeleton graph.
 
         The directed graph has the same nodes and edges as the skeleton graph.
+        Stores the origin node as an attribute.
 
         Parameters
         ----------
@@ -298,9 +387,23 @@ class SkeletonGraph:
             The origin node will have no incoming edges.
         """
         self.graph = make_graph_directed(self.graph, origin)
+        self.origin = origin
         return self.graph
 
     def orient_splines(self) -> nx.DiGraph:
         """Orient the splines in the graph."""
         self.graph = orient_splines(self.graph)
         return self.graph
+
+    def compute_branch_lengths(self) -> dict:
+        """Return a dictionary of edge lengths.
+
+        The keys of the dictionary are the edge tuples, the values are arc lengths
+        of the fitted splines. Units will be the same as voxel scale.
+        """
+        edge_lengths = {}
+        for u, v, attr in self.graph.edges(data=True):
+            edge_lengths[(u, v)] = attr[EDGE_SPLINE_KEY].arc_length
+
+        nx.set_edge_attributes(self.graph, edge_lengths, LENGTH_KEY)
+        return edge_lengths

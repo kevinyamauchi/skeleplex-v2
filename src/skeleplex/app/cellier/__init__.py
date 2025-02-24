@@ -1,6 +1,6 @@
 """Cellier rendering module."""
 
-from skeleplex.app.cellier.viewer_controller import (
+from skeleplex.app.cellier.utils import (
     make_viewer_controller,
     make_viewer_model,
 )
