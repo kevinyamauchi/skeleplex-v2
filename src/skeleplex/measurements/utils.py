@@ -1,6 +1,7 @@
 import networkx as nx  # noqa: D100
 import numpy as np
 import pandas as pd
+import trimesh
 from scipy.spatial.transform import Rotation as R
 
 
@@ -104,3 +105,31 @@ def graph_attributes_to_df(graph: nx.Graph):
     attr_df = pd.DataFrame.from_dict(attr_dict, orient="index").reset_index(drop=True)
 
     return attr_df
+
+
+def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
+    """Computes the normal of the surface at the closest point to a set of points.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The mesh representing the surface.
+    points : np.ndarray
+        An array of shape (n_points, 3) containing the 3D coordinates of the points.
+
+    Returns
+    -------
+    normal_dict : dict
+        A dictionary mapping each point to its corresponding normal vector.
+    distance_dict : dict
+        A dictionary mapping each point to its distance to the surface.
+    """
+    _, distance, closest_triangle = mesh.nearest.on_surface(points)
+    normals = trimesh.triangles.normals(mesh.triangles)[0]
+    normal_dict = {}
+    distance_dict = {}
+    for i in range(len(points)):
+        normal_dict[tuple(points[i])] = normals[closest_triangle[i]]
+        distance_dict[tuple(points[i])] = distance[i]
+
+    return normal_dict, distance_dict
