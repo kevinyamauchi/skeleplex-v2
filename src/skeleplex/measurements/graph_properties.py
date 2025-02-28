@@ -142,6 +142,7 @@ def compute_branch_length(graph):
     nx.DiGraph
         The graph with branch lengths annotated.
     """
+    graph = graph.copy()
     length_dir = {}
     for u, v in graph.edges():
         spline = graph[u][v][EDGE_SPLINE_KEY]
