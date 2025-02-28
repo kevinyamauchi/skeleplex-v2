@@ -304,7 +304,7 @@ class SkeletonGraph:
         """Return a SkeletonGraph from a networkx graph.
 
         The edges and nodes need to have an attribute with the specified keys
-        containing the coordinates of the nodes and edges and an np.ndarray.
+        containing the coordinates of the nodes and edges as an np.ndarray.
         Requires edge coordinates of length greater than 4
         to successfully create a spline.
 
