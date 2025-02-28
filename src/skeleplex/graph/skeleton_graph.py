@@ -56,6 +56,18 @@ def skeleton_graph_decoder(json_object):
             return SplineboxSpline(**spline_kwargs)
         if json_object["__class__"] == "skeleplex.B3Spline":
             return B3Spline.from_json_dict(json_object)
+
+    # Convert lists back to numpy arrays
+    for key, value in json_object.items():
+        if isinstance(value, list):
+            if key in [NODE_COORDINATE_KEY, EDGE_COORDINATES_KEY]:
+                try:
+                    json_object[key] = np.array(value)
+                except Exception:
+                    pass  # If conversion fails, keep it as a list
+            if len(value) == 2 and all(isinstance(i, int | float) for i in value):
+                json_object[key] = tuple(value)
+
     return json_object
 
 

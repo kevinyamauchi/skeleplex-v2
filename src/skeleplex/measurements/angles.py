@@ -52,6 +52,9 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
 
     for u, v, _ in tree.edges(data=True):
         edge = (u, v)
+        # print(list(tree.in_edges(u)))
+        if not list(tree.in_edges(u)):
+            continue
         parent_edge = next(iter(tree.in_edges(u)))
 
         parent_start_node_coordinates = node_coordinates[parent_edge[0]]
@@ -188,6 +191,7 @@ def compute_rotation_angle(graph: nx.DiGraph):
         sister = None
         if SISTER_EDGE_KEY in graph.edges[edge]:
             sister = graph.edges[edge][SISTER_EDGE_KEY]
+
         if not parent or not sister:
             continue
         parent = parent[0]
@@ -204,7 +208,6 @@ def compute_rotation_angle(graph: nx.DiGraph):
         ]
 
         edge_plane = [node_coord[edge[0]], node_coord[edge[1]], node_coord[sister[1]]]
-
         if parent_plane and edge_plane:
             normal_parent = get_normal_of_plane(
                 parent_plane[0], parent_plane[1], parent_plane[2]
