@@ -1,9 +1,10 @@
 import networkx as nx  # noqa: D100
 
 from skeleplex.graph.constants import (
-    EDGE_LENGTH_KEY,
+    DAUGHTER_EDGES_KEY,
     EDGE_SPLINE_KEY,
     GENERATION_KEY,
+    LENGTH_KEY,
     NUMBER_OF_TIPS_KEY,
     PARENT_EDGE_KEY,
     SISTER_EDGE_KEY,
@@ -60,7 +61,32 @@ def get_daughter_edges(graph):
     for edge in graph.edges():
         daughters = list(graph.out_edges(edge[1]))
         daughter_dict[edge] = daughters
-    nx.set_edge_attributes(graph, daughter_dict, PARENT_EDGE_KEY)
+    nx.set_edge_attributes(graph, daughter_dict, DAUGHTER_EDGES_KEY)
+    return graph
+
+
+def get_parent_edges(graph: nx.DiGraph):
+    """Return a graph with parent edges annotated.
+
+    This function identifies parent edges for each edge in the graph.
+    Parent edges are edges that share the same start node.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph.
+
+    Returns
+    -------
+    nx.DiGraph
+        The graph with parent edges annotated.
+    """
+    graph = graph.copy()
+    parent_dict = {}
+    for edge in graph.edges():
+        parents = list(graph.in_edges(edge[0]))
+        parent_dict[edge] = parents
+    nx.set_edge_attributes(graph, parent_dict, PARENT_EDGE_KEY)
     return graph
 
 
@@ -94,8 +120,9 @@ def compute_level(graph: nx.DiGraph, origin: int):
 
     # Set edge level to level of start node
     level_dir = {}
-    for u, _, level in graph.edges(data=GENERATION_KEY):
-        level_dir[u] = level
+    for u, v in graph.edges():
+        node_level = graph.nodes[u][GENERATION_KEY]
+        level_dir[(u, v)] = node_level
     nx.set_edge_attributes(graph, level_dir, GENERATION_KEY)
     return graph
 
@@ -118,9 +145,9 @@ def compute_branch_length(graph):
     length_dir = {}
     for u, v in graph.edges():
         spline = graph[u][v][EDGE_SPLINE_KEY]
-        length = spline.arc_length()
+        length = spline.arc_length
         length_dir[(u, v)] = length
-    nx.set_edge_attributes(graph, length_dir, EDGE_LENGTH_KEY)
+    nx.set_edge_attributes(graph, length_dir, LENGTH_KEY)
     return graph
 
 
