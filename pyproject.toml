@@ -51,7 +51,7 @@ dependencies = [
 [project.optional-dependencies]
 # for visualization
 napari = ["napari[all]"]
-pygfx = ["pygfx", "PySide6"]
+cellier = ["cellier", "PySide6"]
 viz = ["app-model", "superqt"]
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
