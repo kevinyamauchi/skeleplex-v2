@@ -9,10 +9,13 @@ from splinebox import Spline as SplineboxSpline
 from splinebox.spline_curves import _prepared_dict_for_constructor
 
 from skeleplex.graph.constants import (
+    DAUGHTER_EDGES_KEY,
     EDGE_COORDINATES_KEY,
     EDGE_SPLINE_KEY,
     LENGTH_KEY,
     NODE_COORDINATE_KEY,
+    PARENT_EDGE_KEY,
+    SISTER_EDGE_KEY,
 )
 from skeleplex.graph.image_to_graph import image_to_graph_skan
 from skeleplex.graph.spline import B3Spline
@@ -65,8 +68,12 @@ def skeleton_graph_decoder(json_object):
                     json_object[key] = np.array(value)
                 except Exception:
                     pass  # If conversion fails, keep it as a list
-            if len(value) == 2 and all(isinstance(i, int | float) for i in value):
-                json_object[key] = tuple(value)
+
+            if key in [SISTER_EDGE_KEY, DAUGHTER_EDGES_KEY, PARENT_EDGE_KEY]:
+                if key == DAUGHTER_EDGES_KEY:
+                    json_object[key] = [tuple(edge) for edge in value]
+                else:
+                    json_object[key] = tuple(value)
 
     return json_object
 

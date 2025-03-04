@@ -201,6 +201,12 @@ def compute_rotation_angle(graph: nx.DiGraph):
 
         if not parent_sister:
             continue
+
+        if isinstance(parent_sister[0], list):
+            parent_sister = tuple(parent_sister[0])
+        if isinstance(sister[0], list):
+            sister = tuple(sister[0])
+
         parent_plane = [
             node_coord[parent[0]],
             node_coord[parent[1]],
@@ -257,6 +263,8 @@ def compute_sibling_angle(graph: nx.DiGraph):
     # keep only one sister pair as they both have the same angle
     unique_pairs = set()
     for pair in sister_pairs:
+        if isinstance(pair[0][0], list) or isinstance(pair[1][0], list):
+            continue
         pair = tuple(sorted(pair))
         unique_pairs.add(pair)
     unique_pairs = list(unique_pairs)

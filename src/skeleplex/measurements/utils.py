@@ -2,7 +2,10 @@ import networkx as nx  # noqa: D100
 import numpy as np
 import pandas as pd
 import trimesh
+from scipy.interpolate import Rbf
+from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
+from sklearn.decomposition import PCA
 
 
 def unit_vector(vector):
@@ -107,7 +110,96 @@ def graph_attributes_to_df(graph: nx.Graph):
     return attr_df
 
 
-def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
+def extract_central_region(points, percentile=50):
+    """
+    Extracts the central region of the point cloud using PCA and a distance threshold.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        (n_points, 3) array containing the 3D point cloud.
+    percentile : float
+        The percentage of points to keep (default 50% around the mean).
+
+    Returns
+    -------
+    central_points : np.ndarray
+        The extracted central points.
+    pca : PCA
+        The PCA transformation object.
+    mean : np.ndarray
+        Mean of the original point cloud.
+    components : np.ndarray
+        The principal component axes.
+    """
+    # Center the points
+    mean = np.mean(points, axis=0)
+    centered_points = points - mean
+
+    # Apply PCA
+    pca = PCA(n_components=3)
+    pca.fit(centered_points)
+    components = pca.components_  # Principal axes
+
+    # Transform points into PCA space
+    aligned_points = centered_points @ components.T  # Manual projection
+
+    # Compute distances in PCA space (only in the XY plane)
+    distances = np.linalg.norm(aligned_points[:, :2], axis=1)
+    threshold = np.percentile(distances, percentile)
+
+    # Select only the central points
+    central_points = points[distances < threshold]
+    return central_points, mean, components
+
+
+def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile=50):
+    """Fits an RBF surface to the central part of a point cloud.
+
+    Uses PCA for rotation invariance.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        (n_points, 3) array of 3D points.
+    smooth : float
+        RBF smoothing factor.
+    percentile : float
+        How much of the central region to retain (default 50%).
+
+    Returns
+    -------
+    vertices, faces : np.ndarray
+        Mesh vertices and faces.
+    """
+    # Extract central region
+    central_points, mean, components = extract_central_region(points, percentile)
+
+    # Transform central points into PCA space
+    pca_space_points = (central_points - mean) @ components.T  # Manual projection
+
+    # Fit RBF surface on the central points in PCA space
+    x, y, z = pca_space_points[:, 0], pca_space_points[:, 1], pca_space_points[:, 2]
+    rbf = Rbf(x, y, z, function="multiquadric", smooth=smooth)
+
+    # Generate a grid in PCA space
+    x_grid, y_grid = np.meshgrid(
+        np.linspace(np.min(x), np.max(x), 50), np.linspace(np.min(y), np.max(y), 50)
+    )
+    z_grid = rbf(x_grid, y_grid)
+
+    # Reconstruct the surface back into original space
+    grid_points_pca = np.vstack((x_grid.ravel(), y_grid.ravel(), z_grid.ravel())).T
+    original_grid_points = (grid_points_pca @ components) + mean
+    # Build mesh
+    vertices = original_grid_points
+    tri = Delaunay(vertices[:, :2])
+    faces = tri.simplices
+
+    return vertices, faces
+
+
+def get_normal_of_closest_surface_point(mesh: trimesh.Trimesh, points: np.ndarray):
     """Computes the normal of the surface at the closest point to a set of points.
 
     Parameters
@@ -124,6 +216,7 @@ def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
     distance_dict : dict
         A dictionary mapping each point to its distance to the surface.
     """
+    # Find the closest point on the surface
     _, distance, closest_triangle = mesh.nearest.on_surface(points)
     normals = trimesh.triangles.normals(mesh.triangles)[0]
     normal_dict = {}
