@@ -2,6 +2,7 @@ import networkx as nx  # noqa: D100
 import numpy as np
 import pandas as pd
 import trimesh
+import trimesh as tri
 from scipy.interpolate import Rbf
 from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
@@ -219,6 +220,58 @@ def get_normal_of_closest_surface_point(mesh: trimesh.Trimesh, points: np.ndarra
     # Find the closest point on the surface
     _, distance, closest_triangle = mesh.nearest.on_surface(points)
     normals = trimesh.triangles.normals(mesh.triangles)[0]
+    normal_dict = {}
+    distance_dict = {}
+    for i in range(len(points)):
+        normal_dict[tuple(points[i])] = normals[closest_triangle[i]]
+        distance_dict[tuple(points[i])] = distance[i]
+
+    return normal_dict, distance_dict
+
+
+def distance_to_surface(vertices, faces, points):
+    """
+    Computes the distance of a set of points to a surface defined by vertices and faces.
+
+    Parameters
+    ----------
+    vertices : np.ndarray
+        An array of shape (n_vertices, 3) containing the vertices of the surface.
+    faces : np.ndarray
+        An array of shape (n_faces, 3) containing the faces of the surface.
+    points : np.ndarray
+        An array of shape (n_points, 3) containing the 3D coordinates of the points.
+
+    Returns
+    -------
+    distances : np.ndarray
+        An array of shape (n_points,) containing the distances of each point
+        to the surface.
+    """
+    mesh = tri.Trimesh(vertices, faces)
+    closest_point, distance, triangles = mesh.nearest.on_surface(points)
+    return closest_point, distance, triangles
+
+
+def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
+    """Computes the normal of the surface at the closest point to a set of points.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The mesh representing the surface.
+    points : np.ndarray
+        An array of shape (n_points, 3) containing the 3D coordinates of the points.
+
+    Returns
+    -------
+    normal_dict : dict
+        A dictionary mapping each point to its corresponding normal vector.
+    distance_dict : dict
+        A dictionary mapping each point to its distance to the surface.
+    """
+    _, distance, closest_triangle = mesh.nearest.on_surface(points)
+    normals = tri.triangles.normals(mesh.triangles)[0]
     normal_dict = {}
     distance_dict = {}
     for i in range(len(points)):
