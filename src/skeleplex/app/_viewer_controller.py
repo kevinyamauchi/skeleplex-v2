@@ -8,9 +8,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from cellier.models.data_stores.lines import LinesMemoryStore
 from cellier.models.data_stores.points import PointsMemoryStore
-from cellier.models.nodes.lines_node import LinesNode, LinesUniformMaterial
-from cellier.models.nodes.points_node import PointsNode, PointsUniformMaterial
-from cellier.viewer_controller import ViewerController as CellierViewerController
+from cellier.models.visuals import (
+    LinesUniformMaterial,
+    LinesVisual,
+    PointsUniformMaterial,
+    PointsVisual,
+)
+from cellier.viewer_controller import CellierController
 
 from skeleplex.app.cellier.utils import make_viewer_controller, make_viewer_model
 
@@ -26,11 +30,11 @@ class RenderedSkeletonComponents:
     """
 
     nodes_store: PointsMemoryStore | None = None
-    nodes_visual: PointsNode | None = None
+    nodes_visual: PointsVisual | None = None
     edges_store: LinesMemoryStore | None = None
-    edges_visual: LinesNode | None = None
+    edges_visual: LinesVisual | None = None
     edge_highlight_store: LinesMemoryStore | None = None
-    edge_highlight_visual: LinesNode | None = None
+    edge_highlight_visual: LinesVisual | None = None
 
     def populated(self) -> bool:
         """Returns True if all the components are populated."""
@@ -49,7 +53,7 @@ class RenderedSkeletonComponents:
 class MainCanvasController:
     """A class for controlling the main canvas."""
 
-    def __init__(self, scene_id: str, backend: CellierViewerController):
+    def __init__(self, scene_id: str, backend: CellierController):
         self._scene_id = scene_id
         self._backend = backend
 
@@ -74,7 +78,7 @@ class MainCanvasController:
         )
 
         # make the highlight lines model
-        edge_highlight_visual = LinesNode(
+        edge_highlight_visual = LinesVisual(
             name="edge_highlight",
             data_store_id=edge_highlight_store.id,
             material=edge_highlight_material_3d,
@@ -95,7 +99,7 @@ class MainCanvasController:
         )
 
         # make the lines model
-        edge_lines_visual = LinesNode(
+        edge_lines_visual = LinesVisual(
             name="edge_lines",
             data_store_id=edge_lines_store.id,
             material=edge_lines_material_3d,
@@ -113,7 +117,7 @@ class MainCanvasController:
         )
 
         # make the points model
-        points_visual_3d = PointsNode(
+        points_visual_3d = PointsVisual(
             name="node_points",
             data_store_id=points_store.id,
             material=points_material_3d,

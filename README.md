@@ -10,6 +10,13 @@
 
 This is a work-in-progress re-write of SkelePlex. Currently, nothing is working. Please check back later!
 
+## Install with dependencies for the viewer
+
+```bash
+pip install ".[cellier, viz]"
+```
+
+
 ## Development installation
 
 First, fork the library and clone your fork to your local computer. `cd` into the cloned directory.

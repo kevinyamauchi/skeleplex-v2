@@ -10,7 +10,7 @@ from cellier.models.scene import (
 )
 from cellier.models.viewer import SceneManager, ViewerModel
 from cellier.slicer.slicer import SlicerType
-from cellier.viewer_controller import ViewerController
+from cellier.viewer_controller import CellierController
 from qtpy.QtWidgets import QWidget
 
 
@@ -50,9 +50,9 @@ def make_viewer_model() -> ViewerModel:
 
 def make_viewer_controller(
     viewer_model: ViewerModel, parent_widget: QWidget
-) -> ViewerController:
+) -> CellierController:
     """Make the viewer controller."""
-    return ViewerController(
+    return CellierController(
         model=viewer_model,
         slicer_type=SlicerType.ASYNCHRONOUS,
         widget_parent=parent_widget,
