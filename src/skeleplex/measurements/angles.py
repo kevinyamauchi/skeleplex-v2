@@ -82,12 +82,19 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
 
         dot = np.dot(midline_vector, branch_vector)
         angle = np.degrees(np.arccos(dot))
+        # center around 90 degrees
+        # angle = np.abs(angle -90)
+        if angle > 90:
+            angle = angle - 90
+
+        if angle > 90:
+            print(u, v)
 
         angle_dict[edge] = angle
 
         # store for visualization
         center_points.append(parent_end_node_coordinates)
-        midline_points.append(parent_end_node_coordinates + (10 * midline_vector))
+        midline_points.append(parent_end_node_coordinates + (50 * midline_vector))
 
     nx.set_edge_attributes(tree, angle_dict, BRANCH_ANGLE_EDGE_KEY)
 
@@ -152,6 +159,8 @@ def compute_midline_branch_angle_spline(graph: nx.DiGraph, n_samples: int):
             pt = parent_tangents[j]
             dot = np.dot(t, pt)
             angle = np.degrees(np.arccos(dot))
+            # center around 90 deg
+            # angle =np.abs(angle - 90)
             angle_list.append(angle)
         # angle_std = np.std(angle_list)
         mean_angle = np.mean(angle_list)

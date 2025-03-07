@@ -101,7 +101,7 @@ class SkeletonViewer:
             try:
                 eval_points = spline.eval(self.sample_points)
             except AttributeError:
-                eval_points = spline(np.linspace(0.01, 0.99, 4))
+                eval_points = spline.eval(np.linspace(0.01, 0.99, 4))
 
             path = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
             if len(path) <= 5:

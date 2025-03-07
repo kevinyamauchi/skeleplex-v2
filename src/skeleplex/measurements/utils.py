@@ -8,6 +8,12 @@ from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
 from sklearn.decomposition import PCA
 
+from skeleplex.graph.constants import (
+    EDGE_SPLINE_KEY,
+    LOBE_NAME_KEY,
+    NODE_COORDINATE_KEY,
+)
+
 
 def unit_vector(vector):
     """Returns the unit vector of the vector."""
@@ -154,10 +160,10 @@ def extract_central_region(points, percentile=50):
     return central_points, mean, components
 
 
-def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile=50):
-    """Fits an RBF surface to the central part of a point cloud.
+def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile=100):
+    """Fits an RBF surface to a pointcloud using PCA for rotation invariance.
 
-    Uses PCA for rotation invariance.
+    Can be fitted to a central region of the pointcloud.
 
     Parameters
     ----------
@@ -166,7 +172,7 @@ def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile
     smooth : float
         RBF smoothing factor.
     percentile : float
-        How much of the central region to retain (default 50%).
+        How much of the central region to retain (default 100%).
 
     Returns
     -------
@@ -191,7 +197,10 @@ def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile
 
     # Reconstruct the surface back into original space
     grid_points_pca = np.vstack((x_grid.ravel(), y_grid.ravel(), z_grid.ravel())).T
-    original_grid_points = (grid_points_pca @ components) + mean
+    original_grid_points = (
+        grid_points_pca @ components
+    ) + mean  # Correct transformation
+
     # Build mesh
     vertices = original_grid_points
     tri = Delaunay(vertices[:, :2])
@@ -279,3 +288,119 @@ def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
         distance_dict[tuple(points[i])] = distance[i]
 
     return normal_dict, distance_dict
+
+
+def fit_surface_and_get_surface_normal_of_nodes(
+    graph: nx.DiGraph, lobe_name: str, smooth=1000
+):
+    """
+    Fits a surface to the central region of a point cloud and calculate normals.
+
+    The normals is the surface normal of the closest point on the surface to the node.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The graph containing the nodes.
+    lobe_name : str
+        The lobe to process.
+    smooth : float
+        RBF smoothing factor.
+
+    Returns
+    -------
+    normals : dict
+        A dictionary mapping each node to its corresponding normal vector.
+    distances : dict
+        A dictionary mapping each node to its distance to the surface.
+    (vertices, faces) : tuple
+        The vertices and faces of the fitted surface.
+    """
+    # Extract the point cloud of the lobe
+    lobe_node_dict = {}
+    node_coords = nx.get_node_attributes(graph, NODE_COORDINATE_KEY)
+    for u, v, lobe in graph.edges(data=LOBE_NAME_KEY):
+        if lobe not in lobe_node_dict:
+            lobe_node_dict[lobe] = []
+        lobe_node_dict[lobe].extend([node_coords[u], node_coords[v]])
+
+    lobe_points = np.array(lobe_node_dict[lobe_name])
+    vertices, faces = fit_surface_to_pointcloud_rbf_pca(
+        lobe_points, smooth=smooth, percentile=100
+    )
+    mesh = tri.Trimesh(vertices, faces)
+    normals, distances = get_normal_of_closest_point(mesh, lobe_points)
+    return normals, distances, (vertices, faces)
+
+
+def fit_surface_and_get_surface_normal_of_branches(
+    graph: nx.DiGraph, lobe_name: str, smooth=1000
+):
+    """
+    Fits a surface to the central region of a point cloud and calculate normals.
+
+    The normals is the surface normal of the closest point on the
+    surface to the branch midpoint.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+         The graph containing the nodes.
+    lobe_name : str
+         The lobe to process.
+    smooth : float
+         RBF smoothing factor.
+
+    Returns
+    -------
+    normals : dict
+         A dictionary mapping each node to its corresponding normal vector.
+    distances : dict
+         A dictionary mapping each node to its distance to the surface.
+    (vertices, faces) : tuple
+         The vertices and faces of the fitted surface.
+    """
+    # Extract the point cloud of the lobe
+    lobe_node_dict = {}
+    lobe_edge_ID_dict = {}
+
+    node_coords = nx.get_node_attributes(graph, NODE_COORDINATE_KEY)
+    for u, v, lobe in graph.edges(data=LOBE_NAME_KEY):
+        if lobe not in lobe_node_dict:
+            lobe_node_dict[lobe] = []
+            lobe_edge_ID_dict[lobe] = []
+        lobe_node_dict[lobe].extend([node_coords[u], node_coords[v]])
+        lobe_edge_ID_dict[lobe].append((u, v))
+
+    lobe_coordinates = np.array(lobe_node_dict[lobe_name])
+    lobe_edges = lobe_edge_ID_dict[lobe_name]
+    vertices, faces = fit_surface_to_pointcloud_rbf_pca(
+        lobe_coordinates, smooth=smooth, percentile=100
+    )
+
+    mesh = tri.Trimesh(vertices, faces)
+
+    if not all("branch_midpoint" in graph.edges[u, v] for u, v in graph.edges):
+        splines = nx.get_edge_attributes(graph, EDGE_SPLINE_KEY)
+        spline_midpoint_dict = {}
+        # get the midpoint of each spline
+        for edge, spline in splines.items():
+            spline_midpoint_dict[edge] = spline.eval(0.5)
+    else:
+        print("using stored midpoints")
+        spline_midpoint_dict = nx.get_edge_attributes(graph, "branch_midpoint")
+
+    lobe_midpoints = np.array([spline_midpoint_dict[key] for key in lobe_edges])
+
+    normal_dict, distance_dict = get_normal_of_closest_point(mesh, lobe_midpoints)
+
+    edge_normal_dict = {}
+    edge_distance_dict = {}
+
+    for edge in lobe_edges:
+        edge_normal_dict[edge] = normal_dict[tuple(spline_midpoint_dict[edge])]
+        edge_distance_dict[edge] = distance_dict[tuple(spline_midpoint_dict[edge])]
+
+    return edge_normal_dict, edge_distance_dict, (vertices, faces)
+
+    # return normals, distances, (vertices, faces)
