@@ -8,7 +8,10 @@ import numpy as np
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
-from skeleplex.graph.constants import EDGE_COORDINATES_KEY, GENERATION_KEY
+from skeleplex.graph.constants import (
+    EDGE_SPLINE_KEY,
+    GENERATION_KEY,
+)
 from skeleplex.graph.skeleton_graph import SkeletonGraph
 # redraw current layer to update the color of the edges
 
@@ -94,21 +97,13 @@ class SkeletonViewer:
             if generation_dict[edge] > self.level_depth:
                 continue
             edge_color = color_dict_hex.get(edge, "#FFFFFF")
-            # spline = self.skeleton.graph.edges[edge][EDGE_SPLINE_KEY]
-            edge_coordinates = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
-            # try:
-            #     eval_points = spline.eval(self.sample_points,atol = 0.1)
-            # except:
-            #     eval_points = spline.eval(np.linspace(0.01,0.99,4),atol = 0.1)
-            if len(edge_coordinates) <= 5:
-                eval_points = edge_coordinates
-            else:
-                # take every 3rd point
-                eval_points = edge_coordinates[::3]
-
-            # path = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
-            # if len(path) <=5:
-            #     eval_points = path
+            spline = self.skeleton.graph.edges[edge][EDGE_SPLINE_KEY]
+            try:
+                eval_points = spline.eval(self.sample_points, atol=0.1, approx=True)
+            except ValueError:
+                eval_points = spline.eval(
+                    np.linspace(0.01, 0.99, 4), atol=0.1, approx=True
+                )
             shapes.append(eval_points)
 
             color_list.append(edge_color)
@@ -124,7 +119,6 @@ class ChangeBranchColorWidget(QWidget):
     def __init__(self, skeleton_viewer: SkeletonViewer):
         super().__init__()
         self.skeleton_viewer = skeleton_viewer
-
         self.initUI()
 
     def initUI(self):
