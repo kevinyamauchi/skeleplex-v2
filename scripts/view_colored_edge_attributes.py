@@ -1,19 +1,16 @@
-from io import BytesIO  # noqa: D100
+from io import BytesIO  # noqa
+import napari
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-import napari
 import networkx as nx
 import numpy as np
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
-from skeleplex.graph import SkeletonGraph
-from skeleplex.graph.constants import (
-    EDGE_COORDINATES_KEY,
-    EDGE_SPLINE_KEY,
-    GENERATION_KEY,
-)
+from skeleplex.graph.constants import EDGE_COORDINATES_KEY, GENERATION_KEY
+from skeleplex.graph.skeleton_graph import SkeletonGraph
+# redraw current layer to update the color of the edges
 
 
 def change_color_attr(
@@ -23,7 +20,7 @@ def change_color_attr(
     cmap=plt.cm.viridis,
     levels: int | None = None,
 ):
-    """Change the edge color based on an attribute."""
+    """Change the color of the edges based on an attribute."""
     current_layer = next(iter(viewer.layers.selection)).name
 
     color_dict = nx.get_edge_attributes(skeleton.graph, edge_attribute)
@@ -54,9 +51,9 @@ class SkeletonViewer:
     def __init__(
         self,
         skeleton: SkeletonGraph,
-        viewer: napari.Viewer | None = None,
-        level_depth: int | None = None,
+        viewer=None,
         edge_width: int = 4,
+        level_depth: int | None = None,
         num_samples: int = 5,
         edge_color_attr: str = GENERATION_KEY,
     ):
@@ -97,15 +94,21 @@ class SkeletonViewer:
             if generation_dict[edge] > self.level_depth:
                 continue
             edge_color = color_dict_hex.get(edge, "#FFFFFF")
-            spline = self.skeleton.graph.edges[edge][EDGE_SPLINE_KEY]
-            try:
-                eval_points = spline.eval(self.sample_points)
-            except AttributeError:
-                eval_points = spline.eval(np.linspace(0.01, 0.99, 4))
+            # spline = self.skeleton.graph.edges[edge][EDGE_SPLINE_KEY]
+            edge_coordinates = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
+            # try:
+            #     eval_points = spline.eval(self.sample_points,atol = 0.1)
+            # except:
+            #     eval_points = spline.eval(np.linspace(0.01,0.99,4),atol = 0.1)
+            if len(edge_coordinates) <= 5:
+                eval_points = edge_coordinates
+            else:
+                # take every 3rd point
+                eval_points = edge_coordinates[::3]
 
-            path = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
-            if len(path) <= 5:
-                eval_points = path
+            # path = self.skeleton.graph.edges[edge][EDGE_COORDINATES_KEY]
+            # if len(path) <=5:
+            #     eval_points = path
             shapes.append(eval_points)
 
             color_list.append(edge_color)
@@ -116,7 +119,7 @@ class SkeletonViewer:
 
 
 class ChangeBranchColorWidget(QWidget):
-    """Widget to change the edge color based on an attribute."""
+    """Widget to change the color of the edges based on an attribute."""
 
     def __init__(self, skeleton_viewer: SkeletonViewer):
         super().__init__()
@@ -125,11 +128,7 @@ class ChangeBranchColorWidget(QWidget):
         self.initUI()
 
     def initUI(self):
-        """Initialize the widget layout.
-
-        The widget contains a combobox to select the edge attribute for coloring
-        and a QLabel to display the colormap image.
-        """
+        """Initialize the widget layout."""
         layout = QVBoxLayout()
 
         self.label = QLabel("Select Edge Attribute for Coloring:")
@@ -147,7 +146,7 @@ class ChangeBranchColorWidget(QWidget):
 
         # Initialize with the first attribute if available
         if self.comboBox.count() > 0:
-            self._change_edge_color(self.comboBox.currentText())
+            self._change_edge_color(GENERATION_KEY)
 
     def get_edge_attributes(self):
         """Retrieve all edge attributes stored in the skeleton graph."""
@@ -205,12 +204,3 @@ class ChangeBranchColorWidget(QWidget):
         pixmap.loadFromData(buf.getvalue())
 
         self.colorbar_label.setPixmap(pixmap)  # Update QLabel with colormap
-
-
-viewer = napari.Viewer()
-skeleton = SkeletonGraph()
-
-skeleton_viewer = SkeletonViewer(
-    skeleton, viewer=viewer, level_depth=None, num_samples=6
-)
-viewer.window.add_dock_widget(ChangeBranchColorWidget(skeleton_viewer))

@@ -279,10 +279,14 @@ def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
     distance_dict : dict
         A dictionary mapping each point to its distance to the surface.
     """
+    if len(points.shape) == 1:
+        points = np.expand_dims(points, axis=0)
+
     _, distance, closest_triangle = mesh.nearest.on_surface(points)
     normals = tri.triangles.normals(mesh.triangles)[0]
     normal_dict = {}
     distance_dict = {}
+
     for i in range(len(points)):
         normal_dict[tuple(points[i])] = normals[closest_triangle[i]]
         distance_dict[tuple(points[i])] = distance[i]
@@ -397,6 +401,7 @@ def fit_surface_and_get_surface_normal_of_branches(
     edge_normal_dict = {}
     edge_distance_dict = {}
 
+    # Assign the normals and distances to the edges
     for edge in lobe_edges:
         edge_normal_dict[edge] = normal_dict[tuple(spline_midpoint_dict[edge])]
         edge_distance_dict[edge] = distance_dict[tuple(spline_midpoint_dict[edge])]
