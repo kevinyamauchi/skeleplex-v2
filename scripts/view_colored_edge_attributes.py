@@ -1,5 +1,7 @@
 from io import BytesIO  # noqa
 import napari
+from skeleplex.data.skeletons import generate_toy_skeleton_graph_symmetric_branch_angle
+from skeleplex.measurements.graph_properties import compute_level
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -13,6 +15,9 @@ from skeleplex.graph.constants import (
     GENERATION_KEY,
 )
 from skeleplex.graph.skeleton_graph import SkeletonGraph
+import logging
+
+logging.getLogger().setLevel(logging.CRITICAL)
 # redraw current layer to update the color of the edges
 
 
@@ -198,3 +203,12 @@ class ChangeBranchColorWidget(QWidget):
         pixmap.loadFromData(buf.getvalue())
 
         self.colorbar_label.setPixmap(pixmap)  # Update QLabel with colormap
+
+
+# Visualize an example skeleton graph
+skeleton_graph = generate_toy_skeleton_graph_symmetric_branch_angle(19, 27, 20)
+skeleton_graph.graph = compute_level(skeleton_graph.graph, origin=-1)
+
+viewer = napari.Viewer()
+skeleton_viewer = SkeletonViewer(skeleton_graph, viewer)
+viewer.window.add_dock_widget(ChangeBranchColorWidget(skeleton_viewer))
