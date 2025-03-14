@@ -46,6 +46,7 @@ dependencies = [
     "splinebox>=0.3.0",
     "trimesh>=4.4.1",
     "scikit-learn>=1.5.0",
+    "rtree>=1.3.0"
 ]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
