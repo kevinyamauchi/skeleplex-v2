@@ -212,12 +212,21 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
 
 
 class SkeletonGraph:
-    """Data class for a skeleton graph.
+    """
+    Data class for a skeleton graph.
 
     Parameters
     ----------
     graph : nx.Graph
         The skeleton graph.
+    origin : int | None
+        The origin node of the graph.
+    image_path : str | None
+        The path to the image file.
+    image_key : str | None
+        The key for the image data.
+    voxel_size : float | None
+        The size of the voxels in the image.
     """
 
     _backend = "networkx"
