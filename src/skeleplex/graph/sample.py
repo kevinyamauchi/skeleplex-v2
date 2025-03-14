@@ -104,6 +104,7 @@ def sample_volume_at_coordinates(
         order=interpolation_order,
         cval=fill_value,
     )
+
     # reshape back (need to invert due to previous transposition)
     sampled_volume = sampled_volume.reshape(*grid_shape, batch)
     # and retranspose to get batch back to the 0th dimension

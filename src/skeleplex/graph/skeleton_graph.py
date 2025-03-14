@@ -2,7 +2,9 @@
 
 import json
 import logging
+import os
 
+import h5py
 import networkx as nx
 import numpy as np
 from splinebox import Spline as SplineboxSpline
@@ -12,6 +14,7 @@ from skeleplex.graph.constants import (
     DAUGHTER_EDGES_KEY,
     EDGE_COORDINATES_KEY,
     EDGE_SPLINE_KEY,
+    GENERATION_KEY,
     LENGTH_KEY,
     NODE_COORDINATE_KEY,
     PARENT_EDGE_KEY,
@@ -219,8 +222,19 @@ class SkeletonGraph:
 
     _backend = "networkx"
 
-    def __init__(self, graph: nx.Graph):
+    def __init__(
+        self,
+        graph: nx.Graph,
+        origin: int | None = None,
+        image_path: str | None = None,
+        image_key: str | None = None,
+        voxel_size: float | None = None,
+    ):
         self.graph = graph
+        self.origin = origin
+        self.image_path = image_path
+        self.image_key = image_key
+        self.voxel_size = voxel_size
 
     @property
     def backend(self) -> str:
@@ -270,7 +284,16 @@ class SkeletonGraph:
     def to_json_file(self, file_path: str):
         """Return a JSON representation of the graph."""
         graph_dict = nx.node_link_data(self.graph, edges="edges")
-        object_dict = {"graph": graph_dict}
+        # if one of the attributes is not None, add it to the dict
+        # if not add a placeholder
+
+        object_dict = {
+            "graph": graph_dict,
+            "origin": self.origin,
+            "image_path": self.image_path,
+            "image_key": self.image_key,
+            "voxel_size": self.voxel_size,
+        }
 
         with open(file_path, "w") as file:
             json.dump(object_dict, file, indent=2, default=skeleton_graph_encoder)
@@ -281,7 +304,17 @@ class SkeletonGraph:
         with open(file_path) as file:
             object_dict = json.load(file, object_hook=skeleton_graph_decoder)
         graph = nx.node_link_graph(object_dict["graph"], edges="edges")
-        return cls(graph=graph)
+        skeleton_object = cls(graph=graph)
+        # do only if keys exist
+        if "origin" in object_dict:
+            skeleton_object.origin = object_dict["origin"]
+        if "image_path" in object_dict:
+            skeleton_object.image_path = object_dict["image_path"]
+        if "image_key" in object_dict:
+            skeleton_object.image_key = object_dict["image_key"]
+        if "voxel_size" in object_dict:
+            skeleton_object.voxel_size = tuple(object_dict["voxel_size"])
+        return skeleton_object
 
     @classmethod
     def from_skeleton_image(
@@ -378,3 +411,95 @@ class SkeletonGraph:
 
         nx.set_edge_attributes(self.graph, edge_lengths, LENGTH_KEY)
         return edge_lengths
+
+    def sample_volume_slices_from_spline(
+        self,
+        volume: np.ndarray,
+        filepath: str,
+        slice_prefix: str,
+        slice_spacing: float,
+        slice_size: int,
+        interpolation_order: int = 3,
+        max_generation: int | None = None,
+        segmentation: np.ndarray | None = None,
+    ):
+        """Sample volume slices from the splines in the graph.
+
+        Parameters
+        ----------
+        volume : np.ndarray
+            The volume to sample slices from.
+        filepath : str
+            The path to save the slices.
+        slice_prefix : str
+            The prefix to use for the slice filenames.
+        slice_spacing : float
+            The spacing between slices. Normalized between 0 and 1.
+        slice_size : int
+            The size of the slices in pixels.
+        voxel_size : float
+            The size of the pixel in the slice in units of the volume.
+        interpolation_order : int
+            The order of the interpolation to use for the spline.
+            For labels use 0
+        max_generation : int
+            The maximum generation of the spline to sample.
+            If None, all levels are sampled.
+        segmentation : np.ndarray | None
+            The segmentation to sample slices from.
+            If None, only the image is sampled.
+        """
+        image_voxel_size = self.voxel_size
+
+        origin = self.origin
+        if not origin:
+            raise ValueError("No origin node provided. Please set origin.")
+
+        if not image_voxel_size:
+            logger.warning("No voxel size provided. Assuming pixel size is 1 µm.")
+            image_voxel_size = (1, 1, 1)
+
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+            logger.info(f"Created directory {filepath}")
+
+        graph = self.graph.copy()
+        generation_dict = nx.get_edge_attributes(graph, GENERATION_KEY)
+        spline_dict = nx.get_edge_attributes(graph, EDGE_SPLINE_KEY)
+
+        # Scale the pixel size to the image voxel size
+        pixel_size = 1 / image_voxel_size[0]
+
+        for u, v in nx.breadth_first_search.bfs_edges(graph, source=origin):
+            if max_generation and (generation_dict[(u, v)] >= max_generation):
+                break
+            spline = spline_dict[(u, v)]
+            positions = np.linspace(0.1, 0.9, np.ceil(1 / slice_spacing).astype(int))
+            image_slice = spline.sample_volume_2d(
+                volume,
+                positions,
+                grid_shape=(slice_size, slice_size),
+                grid_spacing=(pixel_size, pixel_size),
+                sample_interpolation_order=interpolation_order,
+                image_voxel_size=image_voxel_size,
+            )
+
+            if segmentation is not None:
+                segmentation_slice = spline.sample_volume_2d(
+                    segmentation,
+                    positions,
+                    grid_shape=(slice_size, slice_size),
+                    grid_spacing=(pixel_size, pixel_size),
+                    sample_interpolation_order=0,
+                    image_voxel_size=image_voxel_size,
+                )
+
+            slice_path = os.path.join(
+                filepath,
+                f"{slice_prefix}sn_{u}_en_{v}_level_" f"{generation_dict[(u, v)]}.h5",
+            )
+            with h5py.File(slice_path, "w") as f:
+                f.create_dataset("image", data=image_slice)
+                if segmentation is not None:
+                    f.create_dataset("segmentation", data=segmentation_slice)
+            logger.info(f"Saved slice to {slice_path}")

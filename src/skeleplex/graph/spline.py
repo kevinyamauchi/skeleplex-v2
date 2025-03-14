@@ -122,6 +122,7 @@ class B3Spline:
         moving_frame_method: str = "bishop",
         sample_interpolation_order: int = 3,
         sample_fill_value: float = np.nan,
+        image_voxel_size: tuple[float, float, float] = (1, 1, 1),
     ):
         """Sample a 3D image with 2D planes normal to the spline at specified positions.
 
@@ -147,6 +148,9 @@ class B3Spline:
         sample_fill_value : float
             The fill value to use when sampling the image outside
             the bounds of the array. Default value is np.nan.
+        image_voxel_size : tuple[float, float, float]
+            The voxel size of the image.
+            Default value is (1, 1, 1).
         """
         moving_frame = self.moving_frame(
             positions=positions, method=moving_frame_method
@@ -155,7 +159,7 @@ class B3Spline:
         # generate the grid of points for sampling the image
         # (shape (w, h, 3))
         sampling_grid = generate_2d_grid(
-            grid_shape=grid_shape, grid_spacing=(grid_spacing, grid_spacing)
+            grid_shape=grid_shape, grid_spacing=grid_spacing
         )
 
         # reshape the sampling grid to be a list of coordinates
@@ -172,9 +176,15 @@ class B3Spline:
         # the sampling grid for the 2D image.
         sample_centroid_coordinates = positions = self.eval(positions=positions)
 
+        # transform the grid to the image space
+        sample_centroid_coordinates = sample_centroid_coordinates / np.array(
+            image_voxel_size
+        )
+
         # shift the rotated points to be centered on the spline
         rotated_shifted = np.stack(rotated, axis=1) + sample_centroid_coordinates
         placed_sample_grids = rotated_shifted.reshape(-1, *sampling_grid.shape)
+
         return sample_volume_at_coordinates(
             volume=volume,
             coordinates=placed_sample_grids,
