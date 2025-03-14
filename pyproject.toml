@@ -45,6 +45,7 @@ dependencies = [
     "skan>=0.12.2",
     "splinebox>=0.3.0",
     "trimesh>=4.4.1",
+    "scikit-learn>=1.5.0",
 ]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
