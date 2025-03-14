@@ -35,6 +35,7 @@ def test_skeleton_graph_json_round_trip(simple_t_skeleton_graph, tmp_path):
     """Test writing and reading a SkeletonGraph object"""
     # write the graph to a file
     file_path = tmp_path / "test.json"
+    simple_t_skeleton_graph.origin = 0
     simple_t_skeleton_graph.to_json_file(file_path)
 
     # read the graph from the file
@@ -42,6 +43,7 @@ def test_skeleton_graph_json_round_trip(simple_t_skeleton_graph, tmp_path):
 
     # check that the graphs are equal
     assert simple_t_skeleton_graph == new_skeleton_graph
+    assert simple_t_skeleton_graph.origin == new_skeleton_graph.origin
 
 
 def test_skeleton_graph_to_directed(simple_t_skeleton_graph):
