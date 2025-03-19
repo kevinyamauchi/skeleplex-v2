@@ -1,4 +1,5 @@
-import networkx as nx  # noqa: D100
+import logging  # noqa
+import networkx as nx
 import numpy as np
 import pandas as pd
 import trimesh
@@ -13,6 +14,9 @@ from skeleplex.graph.constants import (
     LOBE_NAME_KEY,
     NODE_COORDINATE_KEY,
 )
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 def unit_vector(vector):
@@ -45,7 +49,7 @@ def ensure_same_normal_direction(normals: dict, reference_direction):
     """Ensure that all normals have the same direction."""
     for key, normal in normals.items():
         if np.sign(normal[0]) != reference_direction:
-            print("flip")
+            logger.info(f"Reversing normal for edge {key}")
             normals[key] = -normal  # Reverse the direction of the normal
     return normals
 
@@ -389,9 +393,9 @@ def fit_surface_and_get_surface_normal_of_branches(
         spline_midpoint_dict = {}
         # get the midpoint of each spline
         for edge, spline in splines.items():
-            spline_midpoint_dict[edge] = spline.eval(0.5)
+            spline_midpoint_dict[edge] = spline.eval(0.5, approx=True)
     else:
-        print("using stored midpoints")
+        logger.info("Using existing branch midpoints")
         spline_midpoint_dict = nx.get_edge_attributes(graph, "branch_midpoint")
 
     lobe_midpoints = np.array([spline_midpoint_dict[key] for key in lobe_edges])

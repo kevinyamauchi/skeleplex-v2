@@ -57,16 +57,23 @@ def extract_central_region(points, percentile=50):
 
 
 def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile=100):
-    """Fits an RBF surface to a pointcloud using PCA for rotation invariance.
+    """Fits an radial basis function surface to a pointcloud using PCA.
 
     Can be fitted to a central region of the pointcloud.
+    PCA is used to find the principle axis of the point cloud at which axis the
+    surface is fitted.
+
+    See Also
+    --------
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.Rbf.html
 
     Parameters
     ----------
     points : np.ndarray
         (n_points, 3) array of 3D points.
     smooth : float
-        RBF smoothing factor.
+        RBF smoothing factor. 0 would fit the surface exactly to the points.
+        Thus to fit a surface through a pointcloud, a high value is recommended.
     percentile : float
         How much of the central region to retain (default 100%).
 

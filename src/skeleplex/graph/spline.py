@@ -49,7 +49,7 @@ class B3Spline:
 
         Uses a quick conversion from normalized arc length coordinates to
         spline parameter coordinates. If approx is set to False, then
-        arc_length_to_parameter is called instead. This useses a binary search
+        arc_length_to_parameter is called instead. This uses a binary search
         to find the parameterized arc length that corresponds to the normalized
         arc length coordinates, but is slower.
 
@@ -63,8 +63,10 @@ class B3Spline:
             Default value is 0.
         approx : bool
             If True, use a quick conversion from normalized arc length
-            coordinates to spline parameter coordinates. If False,
-            use a binary search to find the parameterized arc length
+            coordinates to spline parameter coordinates.
+            The more evenly spaced the spline knots are, the more accurate this
+            approximation becomes.
+            If False, use a binary search to find the parameterized arc length
             that corresponds to the normalized arc length coordinates.
             Default value is False.
         atol : float
@@ -122,7 +124,7 @@ class B3Spline:
         moving_frame_method: str = "bishop",
         sample_interpolation_order: int = 3,
         sample_fill_value: float = np.nan,
-        image_voxel_size: tuple[float, float, float] = (1, 1, 1),
+        image_voxel_size_um: tuple[float, float, float] = (1, 1, 1),
     ):
         """Sample a 3D image with 2D planes normal to the spline at specified positions.
 
@@ -148,7 +150,7 @@ class B3Spline:
         sample_fill_value : float
             The fill value to use when sampling the image outside
             the bounds of the array. Default value is np.nan.
-        image_voxel_size : tuple[float, float, float]
+        image_voxel_size_um : tuple[float, float, float]
             The voxel size of the image.
             Default value is (1, 1, 1).
         """
@@ -178,7 +180,7 @@ class B3Spline:
 
         # transform the grid to the image space
         sample_centroid_coordinates = sample_centroid_coordinates / np.array(
-            image_voxel_size
+            image_voxel_size_um
         )
 
         # shift the rotated points to be centered on the spline
