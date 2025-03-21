@@ -39,3 +39,8 @@ Finally, install the pre-commit git hooks. These will apply the linting before y
 ```bash
 pre-commit install
 ```
+
+## Conventions
+
+We transform all coordinates to physical units [µm].
+The images the graphs are based on should be isotropic.

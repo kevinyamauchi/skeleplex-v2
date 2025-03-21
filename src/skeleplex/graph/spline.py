@@ -1,6 +1,7 @@
 """Utilities for fitting and working with splines."""
 
 import json
+import logging
 
 import numpy as np
 import splinebox
@@ -8,6 +9,9 @@ from scipy.spatial.transform import Rotation
 from splinebox.spline_curves import _prepared_dict_for_constructor
 
 from skeleplex.graph.sample import generate_2d_grid, sample_volume_at_coordinates
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class B3Spline:
@@ -35,9 +39,19 @@ class B3Spline:
         return self.model.arc_length()
 
     def eval(
-        self, positions: np.ndarray, derivative: int = 0, atol: float = 1e-6
+        self,
+        positions: np.ndarray,
+        derivative: int = 0,
+        approx: bool = False,
+        atol: float = 1e-6,
     ) -> np.ndarray:
         """Evaluate the spline at a set of positions.
+
+        Uses a quick conversion from normalized arc length coordinates to
+        spline parameter coordinates. If approx is set to False, then
+        arc_length_to_parameter is called instead. This uses a binary search
+        to find the parameterized arc length that corresponds to the normalized
+        arc length coordinates, but is slower.
 
         Parameters
         ----------
@@ -47,19 +61,34 @@ class B3Spline:
         derivative : int
             The order of the derivative to evaluate.
             Default value is 0.
+        approx : bool
+            If True, use a quick conversion from normalized arc length
+            coordinates to spline parameter coordinates.
+            The more evenly spaced the spline knots are, the more accurate this
+            approximation becomes.
+            If False, use a binary search to find the parameterized arc length
+            that corresponds to the normalized arc length coordinates.
+            Default value is False.
         atol : float
             The absolute tolerance for converting the normalized
             evaluation positions to positions along the spline.
             Default value is 1e-6.
+
         """
-        # convert the normalized arc length coordinates to t
-        positions_t = self.model.arc_length_to_parameter(
-            positions * self.arc_length, atol=atol
-        )
+        if approx:
+            positions_t = positions * (self.model.M - 1)
+            # error computation is expensive, comment out for now
+            # error = self.model.arc_length(positions_t) - (positions * self.arc_length)
+            positions_t = np.asarray(positions_t)
+        else:
+            positions_t = self.model.arc_length_to_parameter(
+                positions * self.arc_length, atol=atol
+            )
         # For single values, splinebox's eval expects a float
         # This recasts the value to a float if positions_t is a single value
         if positions_t.ndim == 0:
             positions_t = positions_t.tolist()
+
         return self.model.eval(positions_t, derivative=derivative)
 
     def moving_frame(
@@ -95,6 +124,7 @@ class B3Spline:
         moving_frame_method: str = "bishop",
         sample_interpolation_order: int = 3,
         sample_fill_value: float = np.nan,
+        image_voxel_size_um: tuple[float, float, float] = (1, 1, 1),
     ):
         """Sample a 3D image with 2D planes normal to the spline at specified positions.
 
@@ -120,6 +150,9 @@ class B3Spline:
         sample_fill_value : float
             The fill value to use when sampling the image outside
             the bounds of the array. Default value is np.nan.
+        image_voxel_size_um : tuple[float, float, float]
+            The voxel size of the image.
+            Default value is (1, 1, 1).
         """
         moving_frame = self.moving_frame(
             positions=positions, method=moving_frame_method
@@ -128,7 +161,7 @@ class B3Spline:
         # generate the grid of points for sampling the image
         # (shape (w, h, 3))
         sampling_grid = generate_2d_grid(
-            grid_shape=grid_shape, grid_spacing=(grid_spacing, grid_spacing)
+            grid_shape=grid_shape, grid_spacing=grid_spacing
         )
 
         # reshape the sampling grid to be a list of coordinates
@@ -145,9 +178,15 @@ class B3Spline:
         # the sampling grid for the 2D image.
         sample_centroid_coordinates = positions = self.eval(positions=positions)
 
+        # transform the grid to the image space
+        sample_centroid_coordinates = sample_centroid_coordinates / np.array(
+            image_voxel_size_um
+        )
+
         # shift the rotated points to be centered on the spline
         rotated_shifted = np.stack(rotated, axis=1) + sample_centroid_coordinates
         placed_sample_grids = rotated_shifted.reshape(-1, *sampling_grid.shape)
+
         return sample_volume_at_coordinates(
             volume=volume,
             coordinates=placed_sample_grids,
