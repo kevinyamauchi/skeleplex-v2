@@ -4,6 +4,7 @@ import logging
 from enum import Enum
 
 import numpy as np
+from cellier.types import MouseButton, MouseCallbackData, MouseEventType, MouseModifiers
 from psygnal import EventedModel, Signal, SignalGroup
 from pydantic.types import FilePath
 
@@ -395,7 +396,9 @@ class DataManager:
         self.file_paths.skeleton_graph = new_data_paths.skeleton_graph
         self.load()
 
-    def _on_edge_selection_click(self, event, click_source: str = "data"):
+    def _on_edge_selection_click(
+        self, event: MouseCallbackData, click_source: str = "data"
+    ):
         """Callback for the edge picking event from the renderer.
 
         Parameters
@@ -406,7 +409,11 @@ class DataManager:
             The source of the click event. Should be either "data" (the main visual)
             or "highlight" (the highlight visual).
         """
-        if ("Control" not in event.modifiers) or event.button != 1:
+        if (
+            (MouseModifiers.CTRL not in event.modifiers)
+            or (event.button != MouseButton.LEFT)
+            or (event.type != MouseEventType.PRESS)
+        ):
             # only pick with control + LMB
             return
 

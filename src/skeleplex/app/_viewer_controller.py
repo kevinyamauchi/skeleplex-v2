@@ -177,7 +177,8 @@ class MainCanvasController:
         self._backend.reslice_scene(scene_id=self.scene_id)
 
     def add_skeleton_edge_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
+        self,
+        callback: Callable,
     ):
         """Add a callback to the skeleton edge visual.
 
@@ -185,26 +186,48 @@ class MainCanvasController:
         ----------
         callback : Callable
             The callback function.
-        callback_type : tuple[str, ...]
-            The type of callback. See the pygfx documentation for event types.
         """
         if not self._skeleton.populated():
             # don't do anything if the skeleton is not rendered
             return
 
         # add for the data visual
-        self._backend.add_visual_callback(
+        if (
+            self._skeleton.edges_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.edges_visual.id
+            )
+        self._backend.events.mouse.subscribe_to_visual(
             visual_id=self._skeleton.edges_visual.id,
             callback=partial(callback, click_source="data"),
-            callback_type=callback_type,
         )
+        # self._backend.add_visual_callback(
+        #     visual_id=self._skeleton.edges_visual.id,
+        #     callback=partial(callback, click_source="data"),
+        #     callback_type=callback_type,
+        # )
 
         # add for the highlight visual
-        self._backend.add_visual_callback(
+        if (
+            self._skeleton.edge_highlight_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.edge_highlight_visual.id
+            )
+        self._backend.events.mouse.subscribe_to_visual(
             visual_id=self._skeleton.edge_highlight_visual.id,
             callback=partial(callback, click_source="highlight"),
-            callback_type=callback_type,
         )
+        # self._backend.add_visual_callback(
+        #     visual_id=self._skeleton.edge_highlight_visual.id,
+        #     callback=partial(callback, click_source="highlight"),
+        #     callback_type=callback_type,
+        # )
 
     def add_skeleton_node_callback(
         self, callback: Callable, callback_type: tuple[str, ...]

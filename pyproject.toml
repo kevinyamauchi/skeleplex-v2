@@ -54,8 +54,8 @@ dependencies = [
 [project.optional-dependencies]
 # for visualization
 napari = ["napari[all]"]
-cellier = ["cellier", "PySide6"]
-viz = ["app-model", "superqt"]
+cellier = ["cellier[pyqt]>=0.0.3",]
+viz = ["app-model"]
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
 # add anything else you like to have in your dev environment here
