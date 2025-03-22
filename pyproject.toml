@@ -53,7 +53,7 @@ dependencies = [
 # "extras" (e.g. for `pip install .[test]`)
 [project.optional-dependencies]
 # for visualization
-napari = ["napari[all]"]
+napari = ["napari[pyqt6,optional]"]
 cellier = ["cellier[pyqt]>=0.0.3",]
 viz = ["app-model"]
 # add dependencies used for testing here
