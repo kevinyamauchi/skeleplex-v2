@@ -182,7 +182,6 @@ class SkelePlexApp(Application):
             # attach the selection callback
             self._viewer.main_canvas.add_skeleton_edge_callback(
                 callback=self.data._on_edge_selection_click,
-                callback_type=("pointer_down",),
             )
 
         else:
