@@ -251,9 +251,7 @@ class MainCanvasController:
             callback_type=callback_type,
         )
 
-    def remove_skeleton_edge_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
-    ):
+    def remove_skeleton_edge_callback(self, callback: Callable):
         """Remove a callback from the skeleton edge visual.
 
         Parameters
@@ -270,7 +268,6 @@ class MainCanvasController:
         self._backend.remove_visual_callback(
             visual_id=self._skeleton.edges_visual.id,
             callback=callback,
-            callback_type=callback_type,
         )
 
     def remove_skeleton_nodes_callback(
