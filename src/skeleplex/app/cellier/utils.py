@@ -7,6 +7,7 @@ from cellier.models.scene import (
     DimsManager,
     PerspectiveCamera,
     Scene,
+    TrackballCameraController,
 )
 from cellier.models.viewer import SceneManager, ViewerModel
 from cellier.slicer.slicer import SlicerType
@@ -32,7 +33,8 @@ def make_viewer_model() -> ViewerModel:
     )
 
     # make the canvas
-    camera_3d = PerspectiveCamera()
+    controller = TrackballCameraController(enabled=True)
+    camera_3d = PerspectiveCamera(controller=controller)
     canvas_3d = Canvas(camera=camera_3d)
 
     # make the scene

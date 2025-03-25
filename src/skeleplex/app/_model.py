@@ -188,5 +188,4 @@ class SkelePlexApp(Application):
             # detach the selection callback
             self._viewer.main_canvas.remove_skeleton_edge_callback(
                 callback=self.data._on_edge_selection_click,
-                callback_type=("pointer_down",),
             )

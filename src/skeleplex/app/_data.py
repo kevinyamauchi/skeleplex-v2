@@ -430,11 +430,11 @@ class DataManager:
             raise ValueError(f"Unknown click source: {click_source}")
 
         if edge_key in self.selection.edge.values:
-            # if the edge is already selected, deselect it it.
+            # if the edge is already selected, deselect it.
             self.selection.edge.values.remove(edge_key)
         else:
             # if the edge is not selected, select it.
-            if "Shift" not in event.modifiers:
+            if MouseModifiers.SHIFT not in event.modifiers:
                 # if shift is not pressed, clear the selection
                 self.selection.edge.values.clear()
             self.selection.edge.values.add(edge_key)
