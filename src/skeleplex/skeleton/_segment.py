@@ -3,32 +3,32 @@ from typing import Literal
 import numpy as np
 import torch
 from monai.inferers import sliding_window_inference
-from morphospaces.networks.multiscale_skeletonization import (
-    MultiscaleSkeletonizationNet,
-)
+from morphospaces.networks import MultiscaleSemanticSegmentationNet
 
-from skeleplex.skeleton._utils import get_skeletonization_model, make_image_5d
+from skeleplex.skeleton._utils import make_image_5d
 
 
-def skeletonize(
+def segment(
     image: np.ndarray,
-    model: Literal["pretrained"] | MultiscaleSkeletonizationNet = "pretrained",
+    model: Literal["pretrained"] | MultiscaleSemanticSegmentationNet = "pretrained",
     roi_size: tuple[int, int, int] = (120, 120, 120),
     overlap: float = 0.5,
     stitching_mode: str = "gaussian",
     progress_bar: bool = True,
     batch_size: int = 1,
 ) -> np.ndarray:
-    """Skeletonize a normalized distance field image.
+    """Segment the structures to be skeletonized.
+
+    In the case of lungs, this would be used to segment the airways.
 
     Parameters
     ----------
     image : np.ndarray
         The input image to skeletonize.
         This should be a normalized distance field image.
-    model : Literal["pretrained"] | MultiscaleSkeletonizationNet = "pretrained",
+    model : Literal["pretrained"] | MultiscaleSemanticSegmentationNet = "pretrained",
         The model to use for prediction. This can either be an instance of
-        MultiscaleSkeletonizationNet or the string "pretrained". If "pretrained",
+        MultiscaleSemanticSegmentationNet or the string "pretrained". If "pretrained",
         a pretrained model will be downloaded from the SkelePlex repository and used.
         Default value is "pretrained".
     roi_size : tuple[int, int, int]
@@ -56,7 +56,7 @@ def skeletonize(
 
     # get the skeletonziation model if requested
     if model == "pretrained":
-        model = get_skeletonization_model()
+        raise NotImplementedError("pretrained segmentation models not implemented.")
 
     # put the model in eval mode
     model.eval()
