@@ -2,9 +2,14 @@
 
 import json
 import logging
+import os
 
+import dask
+import dask.array as da
 import networkx as nx
 import numpy as np
+from dask import delayed
+from dask.diagnostics import ProgressBar
 from splinebox import Spline as SplineboxSpline
 from splinebox.spline_curves import _prepared_dict_for_constructor
 
@@ -207,6 +212,47 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     nx.set_edge_attributes(graph, edge_coordinates_dict, EDGE_COORDINATES_KEY)
 
     return graph
+
+
+def sample_slices_for_edge(
+    u,
+    v,
+    spline,
+    volume,
+    segmentation,
+    positions,
+    slice_size,
+    pixel_size,
+    interpolation_order,
+    image_voxel_size_um,
+    approx,
+):
+    """Helper function for parallel execution."""
+    logger.info(f"Sampling slices from edge ({u}, {v})")
+
+    image_slice = spline.sample_volume_2d(
+        volume,
+        positions,
+        grid_shape=(slice_size, slice_size),
+        grid_spacing=(pixel_size, pixel_size),
+        sample_interpolation_order=interpolation_order,
+        image_voxel_size_um=image_voxel_size_um,
+        approx=approx,
+    )
+
+    segmentation_slice = None
+    if segmentation is not None:
+        segmentation_slice = spline.sample_volume_2d(
+            segmentation,
+            positions,
+            grid_shape=(slice_size, slice_size),
+            grid_spacing=(pixel_size, pixel_size),
+            sample_interpolation_order=0,
+            image_voxel_size_um=image_voxel_size_um,
+            approx=approx,
+        )
+
+    return (u, v), image_slice, segmentation_slice
 
 
 class SkeletonGraph:
@@ -433,6 +479,7 @@ class SkeletonGraph:
         interpolation_order: int = 3,
         max_generation: int | None = None,
         segmentation: np.ndarray | None = None,
+        approx: bool = False,
     ):
         """Sample volume slices from the splines in the graph.
 
@@ -453,6 +500,9 @@ class SkeletonGraph:
         segmentation : np.ndarray | None
             The segmentation to sample slices from.
             If None, only the image is sampled.
+        approx : bool
+            If True, use the approximate spline evaluation.
+            If False, use the exact spline evaluation.
 
         Returns
         -------
@@ -498,6 +548,7 @@ class SkeletonGraph:
                 grid_spacing=(pixel_size, pixel_size),
                 sample_interpolation_order=interpolation_order,
                 image_voxel_size_um=image_voxel_size_um,
+                approx=approx,
             )
             image_slice_dict[(u, v)] = image_slice
 
@@ -509,6 +560,7 @@ class SkeletonGraph:
                     grid_spacing=(pixel_size, pixel_size),
                     sample_interpolation_order=0,
                     image_voxel_size_um=image_voxel_size_um,
+                    approx=approx,
                 )
                 segmentation_slice_dict[(u, v)] = segmentation_slice
 
@@ -516,3 +568,112 @@ class SkeletonGraph:
             return image_slice_dict, segmentation_slice_dict
         else:
             return image_slice_dict
+
+    def sample_volume_slices_from_spline_parallel(
+        self,
+        volume: da.Array,
+        slice_spacing: float,
+        slice_size: int,
+        interpolation_order: int = 3,
+        max_generation: int | None = None,
+        min_generation: int | None = None,
+        segmentation: da.Array | None = None,
+        approx: bool = False,
+    ):
+        """Sample volume slices from the splines in the graph in parallel.
+
+        Loads volume and segmentation data lazily and processes edges in parallel.
+
+        Parameters
+        ----------
+        volume : da.Array
+            The volume to sample slices from.
+        slice_spacing : float
+            The spacing between slices. Normalized between 0 and 1.
+        slice_size : int
+            The size of the slices in pixels.
+        interpolation_order : int
+            The order of the interpolation to use for the spline.
+            For labels use 0
+        max_generation : int
+            The maximum generation of the spline to sample.
+            If None, all levels are sampled.
+        min_generation : int
+            The minimum generation of the spline to sample.
+            If None, all levels are sampled.
+        segmentation : da.Array | None
+            The segmentation to sample slices from.
+            If None, only the image is sampled.
+        approx : bool
+            If True, use the approximate spline evaluation.
+            If False, use the exact spline evaluation.
+
+        """
+        image_voxel_size_um = self.voxel_size_um
+        origin = self.origin
+        if not origin:
+            raise ValueError("No origin node provided. Please set origin.")
+
+        if not image_voxel_size_um:
+            logger.warning("No voxel size provided. Assuming pixel size is 1 µm.")
+            image_voxel_size_um = (1, 1, 1)
+
+        graph = self.graph.copy()
+        generation_dict = nx.get_edge_attributes(graph, GENERATION_KEY)
+        spline_dict = nx.get_edge_attributes(graph, EDGE_SPLINE_KEY)
+
+        pixel_size = 1 / image_voxel_size_um[0]
+
+        # Prepare a list of edges to process
+        edges_to_process = [
+            (u, v)
+            for u, v in nx.breadth_first_search.bfs_edges(graph, source=origin)
+            if (max_generation is None or generation_dict[(u, v)] <= max_generation)
+            and (min_generation is None or generation_dict[(u, v)] > min_generation)
+        ]
+
+        # Define a function to process each edge,
+        # needs to be local to be pickable, required for laziness
+        def process_edge(edge):
+            u, v = edge
+            spline = spline_dict[(u, v)]
+            positions = np.linspace(0.1, 0.9, np.ceil(1 / slice_spacing).astype(int))
+            return sample_slices_for_edge(
+                u,
+                v,
+                spline,
+                volume,
+                segmentation,
+                positions,
+                slice_size,
+                pixel_size,
+                interpolation_order,
+                image_voxel_size_um,
+                approx,
+            )
+
+        # Use Dask delayed to process edges in parallel
+        tasks = [delayed(process_edge)(edge) for edge in edges_to_process]
+
+        # Compute all tasks in parallel
+        logger.info(f"Processing {len(tasks)} edges in parallel.")
+        with ProgressBar():
+            results = dask.compute(
+                *tasks, num_workers=os.cpu_count() - 2, scheduler="threads"
+            )
+
+        # Combine results into dictionaries
+        image_slice_dict = {}
+        segmentation_slice_dict = {}
+
+        for result in results:
+            (u, v), image_slice, segmentation_slice = result
+            image_slice_dict[(u, v)] = image_slice
+            if segmentation is not None:
+                segmentation_slice_dict[(u, v)] = segmentation_slice
+        if segmentation is not None:
+            return (
+                image_slice_dict,
+                segmentation_slice_dict,
+            )
+        return image_slice_dict

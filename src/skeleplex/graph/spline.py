@@ -3,12 +3,17 @@
 import json
 import logging
 
+import dask.array as da
 import numpy as np
 import splinebox
 from scipy.spatial.transform import Rotation
 from splinebox.spline_curves import _prepared_dict_for_constructor
 
-from skeleplex.graph.sample import generate_2d_grid, sample_volume_at_coordinates
+from skeleplex.graph.sample import (
+    generate_2d_grid,
+    sample_volume_at_coordinates,
+    sample_volume_at_coordinates_lazy,
+)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -125,6 +130,7 @@ class B3Spline:
         sample_interpolation_order: int = 3,
         sample_fill_value: float = np.nan,
         image_voxel_size_um: tuple[float, float, float] = (1, 1, 1),
+        approx: bool = False,
     ):
         """Sample a 3D image with 2D planes normal to the spline at specified positions.
 
@@ -153,6 +159,10 @@ class B3Spline:
         image_voxel_size_um : tuple[float, float, float]
             The voxel size of the image.
             Default value is (1, 1, 1).
+        approx : bool
+            If True, use the approximate method for evaluating the spline.
+            If False, use the exact method.
+            Default is False.
         """
         moving_frame = self.moving_frame(
             positions=positions, method=moving_frame_method
@@ -176,7 +186,10 @@ class B3Spline:
 
         # get the coordinates of the points on the spline to center
         # the sampling grid for the 2D image.
-        sample_centroid_coordinates = positions = self.eval(positions=positions)
+        sample_centroid_coordinates = positions = self.eval(
+            positions=positions,
+            approx=approx,
+        )
 
         # transform the grid to the image space
         sample_centroid_coordinates = sample_centroid_coordinates / np.array(
@@ -187,12 +200,20 @@ class B3Spline:
         rotated_shifted = np.stack(rotated, axis=1) + sample_centroid_coordinates
         placed_sample_grids = rotated_shifted.reshape(-1, *sampling_grid.shape)
 
-        return sample_volume_at_coordinates(
-            volume=volume,
-            coordinates=placed_sample_grids,
-            interpolation_order=sample_interpolation_order,
-            fill_value=sample_fill_value,
-        )
+        if type(volume) is da.Array:
+            return sample_volume_at_coordinates_lazy(
+                volume=volume,
+                coordinates=placed_sample_grids,
+                interpolation_order=sample_interpolation_order,
+                fill_value=sample_fill_value,
+            )
+        else:
+            return sample_volume_at_coordinates(
+                volume=volume,
+                coordinates=placed_sample_grids,
+                interpolation_order=sample_interpolation_order,
+                fill_value=sample_fill_value,
+            )
 
     def __eq__(self, other_object) -> bool:
         """Check if two B3Spline objects are equal."""

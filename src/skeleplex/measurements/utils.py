@@ -24,6 +24,13 @@ def unit_vector(vector):
     return np.squeeze(np.asarray(vector / np.linalg.norm(vector)))
 
 
+def grey2rgb(image):
+    """Convert a grayscale image to RGB."""
+    image = np.stack([image] * 3, axis=-1)
+    image = (image - image.min()) / (image.max() - image.min()) * 255
+    return image.astype(np.uint8)
+
+
 def get_normal_of_plane(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray):
     """Get the normal vector of a plane defined by three points.
 

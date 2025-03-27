@@ -32,6 +32,11 @@ def change_color_attr(
     current_layer = next(iter(viewer.layers.selection)).name
 
     color_dict = nx.get_edge_attributes(skeleton.graph, edge_attribute)
+    # replace non colors with nan
+    for key, value in color_dict.items():
+        if not value:
+            color_dict[key] = np.nan
+
     norm = plt.Normalize(vmin=min(color_dict.values()), vmax=max(color_dict.values()))
     # Map each float value to a hex color
     color_dict_hex = {k: mcolors.rgb2hex(cmap(norm(v))) for k, v in color_dict.items()}
@@ -177,10 +182,12 @@ class ChangeBranchColorWidget(QWidget):
             self.skeleton_viewer.skeleton.graph, attribute_name
         ).values()
 
+        edge_values = [v for v in edge_values if v is not None]
+
         if not edge_values:
             return  # Skip if no values found
 
-        min_val, max_val = min(edge_values), max(edge_values)
+        min_val, max_val = np.nanmin(edge_values), np.nanmax(edge_values)
         cmap = self.skeleton_viewer.cmap
         norm = plt.Normalize(vmin=min_val, vmax=max_val)
 
@@ -205,10 +212,11 @@ class ChangeBranchColorWidget(QWidget):
         self.colorbar_label.setPixmap(pixmap)  # Update QLabel with colormap
 
 
-# Visualize an example skeleton graph
-skeleton_graph = generate_toy_skeleton_graph_symmetric_branch_angle(19, 27, 20)
-skeleton_graph.graph = compute_level(skeleton_graph.graph, origin=-1)
+if __name__ == "__main__":
+    # Visualize an example skeleton graph
+    skeleton_graph = generate_toy_skeleton_graph_symmetric_branch_angle(19, 27, 20)
+    skeleton_graph.graph = compute_level(skeleton_graph.graph, origin=-1)
 
-viewer = napari.Viewer()
-skeleton_viewer = SkeletonViewer(skeleton_graph, viewer)
-viewer.window.add_dock_widget(ChangeBranchColorWidget(skeleton_viewer))
+    viewer = napari.Viewer()
+    skeleton_viewer = SkeletonViewer(skeleton_graph, viewer)
+    viewer.window.add_dock_widget(ChangeBranchColorWidget(skeleton_viewer))
