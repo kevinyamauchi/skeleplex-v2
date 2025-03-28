@@ -58,6 +58,12 @@ class B3Spline:
         to find the parameterized arc length that corresponds to the normalized
         arc length coordinates, but is slower.
 
+        Uses a quick conversion from normalized arc length coordinates to
+        spline parameter coordinates. If approx is set to False, then
+        arc_length_to_parameter is called instead. This uses a binary search
+        to find the parameterized arc length that corresponds to the normalized
+        arc length coordinates, but is slower.
+
         Parameters
         ----------
         positions : np.ndarray
@@ -74,12 +80,30 @@ class B3Spline:
             If False, use a binary search to find the parameterized arc length
             that corresponds to the normalized arc length coordinates.
             Default value is False.
+        approx : bool
+            If True, use a quick conversion from normalized arc length
+            coordinates to spline parameter coordinates.
+            The more evenly spaced the spline knots are, the more accurate this
+            approximation becomes.
+            If False, use a binary search to find the parameterized arc length
+            that corresponds to the normalized arc length coordinates.
+            Default value is False.
         atol : float
             The absolute tolerance for converting the normalized
             evaluation positions to positions along the spline.
             Default value is 1e-6.
 
+
         """
+        if approx:
+            positions_t = positions * (self.model.M - 1)
+            # error computation is expensive, comment out for now
+            # error = self.model.arc_length(positions_t) - (positions * self.arc_length)
+            positions_t = np.asarray(positions_t)
+        else:
+            positions_t = self.model.arc_length_to_parameter(
+                positions * self.arc_length, atol=atol
+            )
         if approx:
             positions_t = positions * (self.model.M - 1)
             # error computation is expensive, comment out for now

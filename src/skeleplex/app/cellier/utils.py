@@ -7,10 +7,11 @@ from cellier.models.scene import (
     DimsManager,
     PerspectiveCamera,
     Scene,
+    TrackballCameraController,
 )
 from cellier.models.viewer import SceneManager, ViewerModel
 from cellier.slicer.slicer import SlicerType
-from cellier.viewer_controller import ViewerController
+from cellier.viewer_controller import CellierController
 from qtpy.QtWidgets import QWidget
 
 
@@ -32,7 +33,8 @@ def make_viewer_model() -> ViewerModel:
     )
 
     # make the canvas
-    camera_3d = PerspectiveCamera()
+    controller = TrackballCameraController(enabled=True)
+    camera_3d = PerspectiveCamera(controller=controller)
     canvas_3d = Canvas(camera=camera_3d)
 
     # make the scene
@@ -50,9 +52,9 @@ def make_viewer_model() -> ViewerModel:
 
 def make_viewer_controller(
     viewer_model: ViewerModel, parent_widget: QWidget
-) -> ViewerController:
+) -> CellierController:
     """Make the viewer controller."""
-    return ViewerController(
+    return CellierController(
         model=viewer_model,
         slicer_type=SlicerType.ASYNCHRONOUS,
         widget_parent=parent_widget,

@@ -81,6 +81,21 @@ def skeleton_graph_decoder(json_object):
                 else:
                     json_object[key] = tuple(value)
 
+    # Convert lists back to numpy arrays
+    for key, value in json_object.items():
+        if isinstance(value, list):
+            if key in [NODE_COORDINATE_KEY, EDGE_COORDINATES_KEY]:
+                try:
+                    json_object[key] = np.array(value)
+                except Exception:
+                    pass  # If conversion fails, keep it as a list
+
+            if key in [SISTER_EDGE_KEY, DAUGHTER_EDGES_KEY, PARENT_EDGE_KEY]:
+                if key == DAUGHTER_EDGES_KEY:
+                    json_object[key] = [tuple(edge) for edge in value]
+                else:
+                    json_object[key] = tuple(value)
+
     return json_object
 
 
@@ -273,6 +288,17 @@ class SkeletonGraph:
         We keep the graph scaled to um for easier handling.
 
 
+    origin : int, optional
+        The origin node of the graph.
+    image_path : str, optional
+        The path to the image the graph was extracted from.
+    image_key : str, optional
+        The key of the image in the image file.
+    voxel_size_um : float, optional
+        The voxel size of the image in the image file.
+        We keep the graph scaled to um for easier handling.
+
+
     """
 
     _backend = "networkx"
@@ -286,6 +312,10 @@ class SkeletonGraph:
         voxel_size_um: float | None = None,
     ):
         self.graph = graph
+        self.origin = origin
+        self.image_path = image_path
+        self.image_key = image_key
+        self.voxel_size_um = voxel_size_um
         self.origin = origin
         self.image_path = image_path
         self.image_key = image_key
@@ -349,6 +379,16 @@ class SkeletonGraph:
             "image_key": self.image_key,
             "voxel_size_um": self.voxel_size_um,
         }
+        # if one of the attributes is not None, add it to the dict
+        # if not add a placeholder
+
+        object_dict = {
+            "graph": graph_dict,
+            "origin": self.origin,
+            "image_path": self.image_path,
+            "image_key": self.image_key,
+            "voxel_size_um": self.voxel_size_um,
+        }
 
         with open(file_path, "w") as file:
             json.dump(object_dict, file, indent=2, default=skeleton_graph_encoder)
@@ -359,6 +399,21 @@ class SkeletonGraph:
         with open(file_path) as file:
             object_dict = json.load(file, object_hook=skeleton_graph_decoder)
         graph = nx.node_link_graph(object_dict["graph"], edges="edges")
+        skeleton_object = cls(graph=graph)
+        # do only if keys exist
+        if "origin" in object_dict:
+            skeleton_object.origin = object_dict["origin"]
+        if "image_path" in object_dict:
+            skeleton_object.image_path = object_dict["image_path"]
+        if "image_key" in object_dict:
+            skeleton_object.image_key = object_dict["image_key"]
+        if "voxel_size_um" in object_dict:
+            voxel_size_um = object_dict["voxel_size_um"]
+            if voxel_size_um:
+                voxel_size_um = tuple(voxel_size_um)
+            skeleton_object.voxel_size_um = voxel_size_um
+
+        return skeleton_object
         skeleton_object = cls(graph=graph)
         # do only if keys exist
         if "origin" in object_dict:
@@ -403,6 +458,7 @@ class SkeletonGraph:
         """Return a SkeletonGraph from a networkx graph.
 
         The edges and nodes need to have an attribute with the specified keys
+        containing the coordinates of the nodes and edges as an np.ndarray.
         containing the coordinates of the nodes and edges as an np.ndarray.
         Requires edge coordinates of length greater than 4
         to successfully create a spline.

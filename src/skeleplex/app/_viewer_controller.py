@@ -8,9 +8,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from cellier.models.data_stores.lines import LinesMemoryStore
 from cellier.models.data_stores.points import PointsMemoryStore
-from cellier.models.nodes.lines_node import LinesNode, LinesUniformMaterial
-from cellier.models.nodes.points_node import PointsNode, PointsUniformMaterial
-from cellier.viewer_controller import ViewerController as CellierViewerController
+from cellier.models.visuals import (
+    LinesUniformMaterial,
+    LinesVisual,
+    PointsUniformMaterial,
+    PointsVisual,
+)
+from cellier.viewer_controller import CellierController
 
 from skeleplex.app.cellier.utils import make_viewer_controller, make_viewer_model
 
@@ -26,11 +30,11 @@ class RenderedSkeletonComponents:
     """
 
     nodes_store: PointsMemoryStore | None = None
-    nodes_visual: PointsNode | None = None
+    nodes_visual: PointsVisual | None = None
     edges_store: LinesMemoryStore | None = None
-    edges_visual: LinesNode | None = None
+    edges_visual: LinesVisual | None = None
     edge_highlight_store: LinesMemoryStore | None = None
-    edge_highlight_visual: LinesNode | None = None
+    edge_highlight_visual: LinesVisual | None = None
 
     def populated(self) -> bool:
         """Returns True if all the components are populated."""
@@ -49,7 +53,7 @@ class RenderedSkeletonComponents:
 class MainCanvasController:
     """A class for controlling the main canvas."""
 
-    def __init__(self, scene_id: str, backend: CellierViewerController):
+    def __init__(self, scene_id: str, backend: CellierController):
         self._scene_id = scene_id
         self._backend = backend
 
@@ -74,7 +78,7 @@ class MainCanvasController:
         )
 
         # make the highlight lines model
-        edge_highlight_visual = LinesNode(
+        edge_highlight_visual = LinesVisual(
             name="edge_highlight",
             data_store_id=edge_highlight_store.id,
             material=edge_highlight_material_3d,
@@ -95,7 +99,7 @@ class MainCanvasController:
         )
 
         # make the lines model
-        edge_lines_visual = LinesNode(
+        edge_lines_visual = LinesVisual(
             name="edge_lines",
             data_store_id=edge_lines_store.id,
             material=edge_lines_material_3d,
@@ -113,7 +117,7 @@ class MainCanvasController:
         )
 
         # make the points model
-        points_visual_3d = PointsNode(
+        points_visual_3d = PointsVisual(
             name="node_points",
             data_store_id=points_store.id,
             material=points_material_3d,
@@ -173,7 +177,8 @@ class MainCanvasController:
         self._backend.reslice_scene(scene_id=self.scene_id)
 
     def add_skeleton_edge_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
+        self,
+        callback: Callable,
     ):
         """Add a callback to the skeleton edge visual.
 
@@ -181,26 +186,48 @@ class MainCanvasController:
         ----------
         callback : Callable
             The callback function.
-        callback_type : tuple[str, ...]
-            The type of callback. See the pygfx documentation for event types.
         """
         if not self._skeleton.populated():
             # don't do anything if the skeleton is not rendered
             return
 
         # add for the data visual
-        self._backend.add_visual_callback(
+        if (
+            self._skeleton.edges_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.edges_visual.id
+            )
+        self._backend.events.mouse.subscribe_to_visual(
             visual_id=self._skeleton.edges_visual.id,
             callback=partial(callback, click_source="data"),
-            callback_type=callback_type,
         )
+        # self._backend.add_visual_callback(
+        #     visual_id=self._skeleton.edges_visual.id,
+        #     callback=partial(callback, click_source="data"),
+        #     callback_type=callback_type,
+        # )
 
         # add for the highlight visual
-        self._backend.add_visual_callback(
+        if (
+            self._skeleton.edge_highlight_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.edge_highlight_visual.id
+            )
+        self._backend.events.mouse.subscribe_to_visual(
             visual_id=self._skeleton.edge_highlight_visual.id,
             callback=partial(callback, click_source="highlight"),
-            callback_type=callback_type,
         )
+        # self._backend.add_visual_callback(
+        #     visual_id=self._skeleton.edge_highlight_visual.id,
+        #     callback=partial(callback, click_source="highlight"),
+        #     callback_type=callback_type,
+        # )
 
     def add_skeleton_node_callback(
         self, callback: Callable, callback_type: tuple[str, ...]
@@ -224,9 +251,7 @@ class MainCanvasController:
             callback_type=callback_type,
         )
 
-    def remove_skeleton_edge_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
-    ):
+    def remove_skeleton_edge_callback(self, callback: Callable):
         """Remove a callback from the skeleton edge visual.
 
         Parameters
@@ -243,7 +268,6 @@ class MainCanvasController:
         self._backend.remove_visual_callback(
             visual_id=self._skeleton.edges_visual.id,
             callback=callback,
-            callback_type=callback_type,
         )
 
     def remove_skeleton_nodes_callback(
