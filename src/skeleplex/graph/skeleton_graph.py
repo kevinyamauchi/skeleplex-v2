@@ -233,8 +233,8 @@ def sample_slices_for_edge(
     u,
     v,
     spline,
-    volume,
-    segmentation,
+    volume_path,
+    segmentation_path,
     positions,
     slice_size,
     pixel_size,
@@ -244,6 +244,8 @@ def sample_slices_for_edge(
 ):
     """Helper function for parallel execution."""
     logger.info(f"Sampling slices from edge ({u}, {v})")
+
+    volume = da.from_zarr(volume_path, chunks="auto")
 
     image_slice = spline.sample_volume_2d(
         volume,
@@ -256,7 +258,8 @@ def sample_slices_for_edge(
     )
 
     segmentation_slice = None
-    if segmentation is not None:
+    if segmentation_path is not None:
+        segmentation = da.from_zarr(segmentation_path, chunks="auto")
         segmentation_slice = spline.sample_volume_2d(
             segmentation,
             positions,
@@ -627,13 +630,13 @@ class SkeletonGraph:
 
     def sample_volume_slices_from_spline_parallel(
         self,
-        volume: da.Array,
+        volume_path: da.Array,
         slice_spacing: float,
         slice_size: int,
         interpolation_order: int = 3,
         max_generation: int | None = None,
         min_generation: int | None = None,
-        segmentation: da.Array | None = None,
+        segmentation_path: da.Array | None = None,
         approx: bool = False,
     ):
         """Sample volume slices from the splines in the graph in parallel.
@@ -642,8 +645,9 @@ class SkeletonGraph:
 
         Parameters
         ----------
-        volume : da.Array
-            The volume to sample slices from.
+        volume_path : str
+            The volume path to sample slices from.
+            Must be path to a zarr file. Otherwise its not pickleable.
         slice_spacing : float
             The spacing between slices. Normalized between 0 and 1.
         slice_size : int
@@ -657,8 +661,9 @@ class SkeletonGraph:
         min_generation : int
             The minimum generation of the spline to sample.
             If None, all levels are sampled.
-        segmentation : da.Array | None
-            The segmentation to sample slices from.
+        segmentation_path : str | None
+            The segmentation path to sample slices from.
+            Must be path to a zarr file. Otherwise its not pickleable.
             If None, only the image is sampled.
         approx : bool
             If True, use the approximate spline evaluation.
@@ -698,8 +703,8 @@ class SkeletonGraph:
                 u,
                 v,
                 spline,
-                volume,
-                segmentation,
+                volume_path,
+                segmentation_path,
                 positions,
                 slice_size,
                 pixel_size,
@@ -715,7 +720,7 @@ class SkeletonGraph:
         logger.info(f"Processing {len(tasks)} edges in parallel.")
         with ProgressBar():
             results = dask.compute(
-                *tasks, num_workers=os.cpu_count() - 2, scheduler="threads"
+                *tasks, num_workers=os.cpu_count() - 2, scheduler="processes"
             )
 
         # Combine results into dictionaries
@@ -725,9 +730,9 @@ class SkeletonGraph:
         for result in results:
             (u, v), image_slice, segmentation_slice = result
             image_slice_dict[(u, v)] = image_slice
-            if segmentation is not None:
+            if segmentation_path is not None:
                 segmentation_slice_dict[(u, v)] = segmentation_slice
-        if segmentation is not None:
+        if segmentation_path is not None:
             return (
                 image_slice_dict,
                 segmentation_slice_dict,
