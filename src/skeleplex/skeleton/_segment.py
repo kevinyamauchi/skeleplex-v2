@@ -1,8 +1,12 @@
+import warnings
 from typing import Literal
 
 import numpy as np
 import torch
-from monai.inferers import sliding_window_inference
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    from monai.inferers import sliding_window_inference
 from morphospaces.networks import MultiscaleSemanticSegmentationNet
 
 from skeleplex.skeleton._utils import make_image_5d
