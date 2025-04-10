@@ -417,21 +417,6 @@ class SkeletonGraph:
             skeleton_object.voxel_size_um = voxel_size_um
 
         return skeleton_object
-        skeleton_object = cls(graph=graph)
-        # do only if keys exist
-        if "origin" in object_dict:
-            skeleton_object.origin = object_dict["origin"]
-        if "image_path" in object_dict:
-            skeleton_object.image_path = object_dict["image_path"]
-        if "image_key" in object_dict:
-            skeleton_object.image_key = object_dict["image_key"]
-        if "voxel_size_um" in object_dict:
-            voxel_size_um = object_dict["voxel_size_um"]
-            if voxel_size_um:
-                voxel_size_um = tuple(voxel_size_um)
-            skeleton_object.voxel_size_um = voxel_size_um
-
-        return skeleton_object
 
     @classmethod
     def from_skeleton_image(
