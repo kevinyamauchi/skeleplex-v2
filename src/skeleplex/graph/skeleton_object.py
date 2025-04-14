@@ -1,11 +1,22 @@
-"""Construction of a Skeleton object which enables further analysis and processing."""
+"""Construction of a Skeleton object which enables further analysis and processing.
 
+This function is adapted from Genevieve Buckley's distributed-skeleton-analysis repo:
+https://github.com/GenevieveBuckley/distributed-skeleton-analysis
+"""
+
+import dask.array as da
 import numpy as np
+import scipy.sparse
 from skan import Skeleton
 from skan.csr import _build_skeleton_path_graph, csr_to_nbgraph
 
 
-def create_skeleton_object(skel, skelint, degrees_image, graph):
+def create_skeleton_object(
+    skeleton_image: da.Array,
+    labeled_skeleton_image: da.Array,
+    degrees_image: da.Array,
+    adjacency_matrix: scipy.sparse.csr_matrix,
+) -> Skeleton:
     """
     Constructs a Skeleton object from a skeletonized image.
 
@@ -15,83 +26,67 @@ def create_skeleton_object(skel, skelint, degrees_image, graph):
 
     Parameters
     ----------
-    skel : dask.array.Array
+    skeleton_image : dask.array.Array
         The original skeletonized image.
-    skelint : dask.array.Array
+    labeled_skeleton_image : dask.array.Array
         The labeled skeleton image where each connected component has a unique ID.
     degrees_image : dask.array.Array
         An image representing the degree (connectivity) of each skeleton pixel.
-    graph : scipy.sparse.csr_matrix
+    adjacency_matrix : scipy.sparse.csr_matrix
         The adjacency matrix representing the skeleton graph.
 
     Returns
     -------
-    skel_obj : skan.Skeleton
+    skeleton_object : skan.Skeleton
         A Skeleton object containing the graph, node coordinates, and paths.
     """
-    ndim = skel.ndim
+    ndim = skeleton_image.ndim
 
-    # Initialize Skeleton object
-    skel_obj = Skeleton(np.eye(5))  # Dummy initialization
-    skel_obj.skeleton_image = skel
-    skel_obj.spacing = [1] * skel.ndim  # Pixel spacing
-    skel_obj.graph = graph
-    skel_obj.degrees_image = degrees_image
+    skeleton_object = Skeleton(np.eye(5))
+    skeleton_object.skeleton_image = skeleton_image
+    skeleton_object.spacing = [1] * skeleton_image.ndim
+    skeleton_object.graph = adjacency_matrix
+    skeleton_object.degrees_image = degrees_image
 
-    # Calculate the degrees attribute
-    nonzero_degree_values = degrees_image[
-        degrees_image > 0
-    ].compute()  # triggers Dask computation
+    nonzero_degree_values = degrees_image[degrees_image > 0].compute()
     degrees = np.concatenate((np.array([0]), nonzero_degree_values))
-    skel_obj.degrees = degrees
+    skeleton_object.degrees = degrees
 
-    # Create a numba-compatible version of the skeleton graph adjacency matrix
-    # node_prop for Skeleton class, so we can get the NBGraph (numba-ified graph)
-    nonzero_pixel_ids = skelint[skelint > 0]
-    nonzero_pixel_ids = np.asarray(nonzero_pixel_ids)  # coerces to a numpy array
-    sorted_indices = np.argsort(nonzero_pixel_ids)  # Dask doesn't implement argsort
+    labeled_pixel_ids = [labeled_skeleton_image > 0]
+    labeled_pixel_ids = np.asarray(labeled_pixel_ids)
+    sorted_indices = np.argsort(
+        labeled_skeleton_image[labeled_skeleton_image > 0].compute()
+    )
 
-    raw_data = skel
-    nonzero_pixel_intensity = raw_data[skelint > 0]
+    raw_data = skeleton_image
+    nonzero_pixel_intensity = raw_data[labeled_skeleton_image > 0]
 
-    # important, otherwise the indexing with sorted_indices thinks it's out of bounds
     nonzero_pixel_intensity.compute_chunk_sizes()
 
-    node_props = nonzero_pixel_intensity[
-        sorted_indices
-    ].compute()  # trigger Dask computation
-    node_props = np.concatenate((np.array([0]), node_props))  # add a dummy index
+    node_props = nonzero_pixel_intensity[sorted_indices].compute()
+    node_props = np.concatenate((np.array([0]), node_props))
 
-    nbgraph = csr_to_nbgraph(
-        graph, node_props=node_props
-    )  # node_props=None is the default
-    # nbgraph = csr_to_nbgraph(graph, node_props=node_props)
+    nbgraph = csr_to_nbgraph(adjacency_matrix, node_props=node_props)
 
-    skel_obj.nbgraph = nbgraph
+    skeleton_object.nbgraph = nbgraph
 
-    # We also need to tell skan the non-zero pixel locations from our skeleton image.
-    # Compute skelint first to ensure known chunk sizes
-    skelint_np = skelint.compute()
+    skelint_np = labeled_skeleton_image.compute()
 
-    # Extract labeled pixel coordinates (z, y, x) and their corresponding labels
-    pixel_coords = np.argwhere(skelint_np > 0)  # Get skeleton pixel positions
-    pixel_labels = skelint_np[skelint_np > 0]  # Get corresponding labels
+    pixel_coords = np.argwhere(skelint_np > 0)
+    pixel_labels = skelint_np[skelint_np > 0]
 
-    # Sort by label to ensure consistent mapping
     sorted_indices = np.argsort(pixel_labels)
-    pixel_coords = pixel_coords[sorted_indices]  # Reorder coordinates
-    pixel_labels = pixel_labels[sorted_indices]  # Reorder labels
+    pixel_coords = pixel_coords[sorted_indices]
+    pixel_labels = pixel_labels[sorted_indices]
 
-    # Assign sorted coordinates (ensuring node IDs align with pixel locations)
-    skel_obj.coordinates = np.concatenate(([[0.0] * ndim], pixel_coords), axis=0)
+    skeleton_object.coordinates = np.concatenate(([[0.0] * ndim], pixel_coords), axis=0)
 
     paths = _build_skeleton_path_graph(nbgraph)
-    skel_obj.paths = paths
-    skel_obj.n_paths = paths.shape[0]
+    skeleton_object.paths = paths
+    skeleton_object.n_paths = paths.shape[0]
 
-    # MUST reset distances_initialized AND the empty numpy array to calc branch length
-    skel_obj._distances_initialized = False
-    skel_obj.distances = np.empty(skel_obj.n_paths, dtype=float)
-    skel_obj.path_lengths()
+    skeleton_object._distances_initialized = False
+    skeleton_object.distances = np.empty(skeleton_object.n_paths, dtype=float)
+    skeleton_object.path_lengths()
 
-    return skel_obj
+    return skeleton_object

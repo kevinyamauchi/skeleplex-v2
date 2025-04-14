@@ -1,9 +1,14 @@
-"""Conversion of a skeletonized image into a sparse graph representation using Dask."""
+"""Conversion of a skeletonized image into a sparse graph representation using Dask.
+
+These functions are adapted from Genevieve Buckley's distributed-skeleton-analysis repo:
+https://github.com/GenevieveBuckley/distributed-skeleton-analysis
+"""
 
 import functools
 import operator
 from itertools import product
 
+import dask.array as da
 import dask.dataframe as dd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,13 +22,15 @@ from skan.nputil import raveled_steps_to_neighbors
 
 
 @delayed
-def skeleton_graph_func(skelint, spacing=1):
+def skeleton_graph_func(
+    labeled_skeleton_chunk: np.ndarray, spacing: float = 1
+) -> pd.DataFrame:
     """
-    Converts a skeleton chunk into a graph representation.
+    Converts a skeleton chunk into a adjacency matrix representation.
 
     Parameters
     ----------
-    skelint : np.ndarray
+    labeled_skeleton_chunk : np.ndarray
         A skeletonized binary image chunk.
     spacing : float, optional
         Spacing between pixels in the skeleton, by default 1.
@@ -33,30 +40,29 @@ def skeleton_graph_func(skelint, spacing=1):
     pd.DataFrame
         A DataFrame containing the graph edges with 'row', 'col', and 'data' columns.
     """
-    ndim = skelint.ndim
+    ndim = labeled_skeleton_chunk.ndim
     spacing = np.ones(ndim, dtype=float) * spacing
-    num_edges = _num_edges(skelint.astype(bool))
-    padded_skelint = np.pad(skelint, 1)  # pad image to prevent looparound errors
+    num_edges = _num_edges(labeled_skeleton_chunk.astype(bool))
+    padded_chunk = np.pad(labeled_skeleton_chunk, 1)
     steps, distances = raveled_steps_to_neighbors(
-        padded_skelint.shape, ndim, spacing=spacing
+        padded_chunk.shape, ndim, spacing=spacing
     )
 
-    # from function skan.csr._pixel_graph
     row = np.empty(num_edges, dtype=int)
     col = np.empty(num_edges, dtype=int)
     data = np.empty(num_edges, dtype=float)
-    _write_pixel_graph(padded_skelint, steps, distances, row, col, data)
+    _write_pixel_graph(padded_chunk, steps, distances, row, col, data)
 
     return pd.DataFrame({"row": row, "col": col, "data": data})
 
 
-def _num_edges(skel):
+def _num_edges(skeleton_chunk: np.ndarray) -> int:
     """
     Computes the total number of edges in a skeletonized image.
 
     Parameters
     ----------
-    skel : np.ndarray
+    skeleton_chunk : np.ndarray
         The skeletonized binary image.
 
     Returns
@@ -64,17 +70,22 @@ def _num_edges(skel):
     int
         The total number of edges in the skeleton.
     """
-    ndim = skel.ndim
+    ndim = skeleton_chunk.ndim
     degree_kernel = np.ones((3,) * ndim)
-    degree_kernel[(1,) * ndim] = 0  # remove centre pixel
+    degree_kernel[(1,) * ndim] = 0
     degree_image = (
-        scipy.ndimage.convolve(skel.astype(int), degree_kernel, mode="constant") * skel
+        scipy.ndimage.convolve(
+            skeleton_chunk.astype(int), degree_kernel, mode="constant"
+        )
+        * skeleton_chunk
     )
     num_edges = np.sum(degree_image)
     return int(num_edges)
 
 
-def slices_from_chunks_overlap(chunks, array_shape, depth=1):
+def slices_from_chunks_overlap(
+    chunks: tuple[tuple[int, ...], ...], array_shape: tuple[int, ...], depth: int = 1
+) -> list[tuple[slice, ...]]:
     """Translate chunks tuple to a set of slices in product order.
 
     Parameters
@@ -112,7 +123,7 @@ def slices_from_chunks_overlap(chunks, array_shape, depth=1):
     return list(product(*slices))
 
 
-def construct_matrix(skelint):
+def construct_matrix(labeled_skeleton_image: da.Array) -> scipy.sparse.csr_matrix:
     """
     Constructs a sparse adjacency matrix from a skeletonized image.
 
@@ -121,59 +132,58 @@ def construct_matrix(skelint):
 
     Parameters
     ----------
-    skelint : dask.array.Array
+    labeled_skeleton_image : dask.array.Array
         The labeled skeletonized image.
 
     Returns
     -------
-    scipy.sparse.csr_matrix
+    adjacency_matrix : scipy.sparse.csr_matrix
         A sparse adjacency matrix representing the skeleton graph.
     """
-    image = skelint
-
-    block_iter = zip(
-        np.ndindex(*image.numblocks),
+    chunk_iterator = zip(
+        np.ndindex(*labeled_skeleton_image.numblocks),
         map(
-            functools.partial(operator.getitem, image),
-            slices_from_chunks_overlap(image.chunks, image.shape, depth=1),
+            functools.partial(operator.getitem, labeled_skeleton_image),
+            slices_from_chunks_overlap(
+                labeled_skeleton_image.chunks, labeled_skeleton_image.shape, depth=1
+            ),
         ),
         strict=False,
     )
 
     meta = dd.utils.make_meta(
         [("row", np.int64), ("col", np.int64), ("data", np.float64)]
-    )  # it's very important to include meta
-    intermediate_results = [
+    )
+    chunk_graphs = [
         dd.from_delayed(skeleton_graph_func(block), meta=meta)
-        for _, block in block_iter
+        for _, block in chunk_iterator
     ]
-    results = dd.concat(intermediate_results)
+    graph_edges_df = dd.concat(chunk_graphs)
 
-    # drop duplicates from the results
-    results = results.drop_duplicates()
+    graph_edges_df = graph_edges_df.drop_duplicates()
 
-    k = len(results)
-    row = np.array(results["row"])
-    col = np.array(results["col"])
-    data = np.array(results["data"])
+    k = len(graph_edges_df)
+    row = np.array(graph_edges_df["row"])
+    col = np.array(graph_edges_df["col"])
+    data = np.array(graph_edges_df["data"])
 
-    graph = sparse.coo_matrix((data[:k], (row[:k], col[:k]))).tocsr()
+    adjacency_matrix = sparse.coo_matrix((data[:k], (row[:k], col[:k]))).tocsr()
 
-    return graph
+    return adjacency_matrix
 
 
-def visualize_graph(graph):
+def visualize_graph(adjacency_matrix: scipy.sparse.csr_matrix) -> None:
     """
     Visualizes the adjacency matrix of a skeleton graph.
 
     Parameters
     ----------
-    graph : scipy.sparse.csr_matrix
+    adjacency_matrix : scipy.sparse.csr_matrix
         The adjacency matrix representing the skeleton graph.
     """
-    plt.xticks(ticks=np.arange(0, graph.shape[1], 1))
-    plt.yticks(ticks=np.arange(0, graph.shape[0], 1))
-    plt.imshow(graph.todense(), cmap="viridis")
+    plt.xticks(ticks=np.arange(0, adjacency_matrix.shape[1], 1))
+    plt.yticks(ticks=np.arange(0, adjacency_matrix.shape[0], 1))
+    plt.imshow(adjacency_matrix.todense(), cmap="viridis")
     plt.colorbar(label="Graph Connectivity")
     plt.title("Sparse Graph Representation")
     plt.show()
