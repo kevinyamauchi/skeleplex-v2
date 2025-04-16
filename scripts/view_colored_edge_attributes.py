@@ -37,7 +37,10 @@ def change_color_attr(
         if not value:
             color_dict[key] = np.nan
 
-    norm = plt.Normalize(vmin=min(color_dict.values()), vmax=max(color_dict.values()))
+    norm = plt.Normalize(
+        vmin=np.nanmin(list(color_dict.values())),
+        vmax=np.nanmax(list(color_dict.values())),
+    )
     # Map each float value to a hex color
     color_dict_hex = {k: mcolors.rgb2hex(cmap(norm(v))) for k, v in color_dict.items()}
 
@@ -92,7 +95,8 @@ class SkeletonViewer:
     def _initialize_viewer(self):
         color_dict = nx.get_edge_attributes(self.skeleton.graph, self.edge_color_attr)
         norm = plt.Normalize(
-            vmin=min(color_dict.values()), vmax=max(color_dict.values())
+            vmin=np.nanmin(list(color_dict.values())),
+            vmax=np.nanmax(list(color_dict.values())),
         )
         # Map each float value to a hex color
         color_dict_hex = {

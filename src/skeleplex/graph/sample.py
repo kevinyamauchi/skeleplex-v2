@@ -149,6 +149,13 @@ def sample_volume_at_coordinates_lazy(
     min_coords = np.floor(coordinates.min(axis=(0, 1, 2))).astype(int)
     max_coords = np.ceil(coordinates.max(axis=(0, 1, 2))).astype(int)
 
+    # Clip to valid range
+    min_coords = np.clip(min_coords, 0, np.array(volume.shape) - 1)
+    max_coords = np.clip(max_coords, 1, np.array(volume.shape))  # avoid empty slices
+
+    if np.any(max_coords <= min_coords):
+        raise ValueError("Sliced volume would be empty due to coordinate range.")
+
     # Extract only the necessary chunk (use slicing)
     sliced_volume = volume[
         min_coords[0] : max_coords[0],

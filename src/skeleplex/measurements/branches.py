@@ -198,6 +198,68 @@ def filter_and_segment_lumen(
             f.create_dataset("segmentation", data=label_slices_filt)
 
 
+def filter_for_iterative_lumens(data_path, save_path):
+    """
+    Filter for iterative lumens.
+
+    This function removes slices that are surrounded by slices with label 2
+    and have no label 2 themselves.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the input data directory containing .h5 files.
+    save_path : str
+        Path to the output directory where filtered .h5 files will be saved.
+
+    """
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+        logger.info(f"Created directory: {save_path}")
+
+    files = [f for f in os.listdir(data_path) if f.endswith(".h5")]
+    logger.info(f"Found {len(files)} files to process.")
+    files = tqdm.tqdm(files, desc="Processing files")
+
+    for file in files:
+        logger.info(f"Processing {file}")
+
+        with h5py.File(os.path.join(data_path, file), "r") as f:
+            image_slices = f["image"][:]
+            segmentation_slices = f["segmentation"][:]
+
+        if np.sum(segmentation_slices == 2) == 0:
+            continue  # Skip files with no segmentation slices labeled as 2
+
+        index_to_remove = []
+        for i, label_slice in enumerate(segmentation_slices):
+            # Skip the first and last slices
+            if i == 0 or i == len(segmentation_slices) - 1:
+                continue
+
+            # Check if the current slice has no label 2
+            # but is surrounded by slices with label 2
+            if np.sum(label_slice == 2) == 0:
+                logger.info(f"{i} in file {file} has no label 2")
+
+                if (
+                    np.sum(segmentation_slices[i - 1] == 2) > 0
+                    and np.sum(segmentation_slices[i + 1] == 2) > 0
+                ):
+                    index_to_remove.append(i)
+                    logger.info(f"Removing slice {i} from file {file}")
+        if len(index_to_remove) == 0:
+            logger.info(f"No slices to remove in file {file}")
+            continue
+        # Remove invalid slices
+        image_slice_filt = np.delete(image_slices, index_to_remove, axis=0)
+        label_slices_filt = np.delete(segmentation_slices, index_to_remove, axis=0)
+
+        with h5py.File(os.path.join(save_path, file), "w") as f:
+            f.create_dataset("image", data=image_slice_filt)
+            f.create_dataset("segmentation", data=label_slices_filt)
+
+
 def add_measurements_from_h5_to_graph(
     skeleton_graph: SkeletonGraph,
     data_path: str,
@@ -226,7 +288,7 @@ def add_measurements_from_h5_to_graph(
     minor_axis_dict = {}
     major_axis_dict = {}
     for file in files:
-        print(file)
+        logger.info(file)
         # load
         with h5py.File(data_path + file, "r") as f:
             segmentation_slices = f["segmentation"][:]
@@ -309,3 +371,5 @@ def add_measurements_from_h5_to_graph(
         nx.set_edge_attributes(skeleton_graph.graph, total_area_dict, name="total_area")
         nx.set_edge_attributes(skeleton_graph.graph, minor_axis_dict, name="minor_axis")
         nx.set_edge_attributes(skeleton_graph.graph, major_axis_dict, name="major_axis")
+
+    return skeleton_graph

@@ -253,6 +253,7 @@ def sample_slices_for_edge(
         grid_shape=(slice_size, slice_size),
         grid_spacing=(pixel_size, pixel_size),
         sample_interpolation_order=interpolation_order,
+        sample_fill_value=0,
         image_voxel_size_um=image_voxel_size_um,
         approx=approx,
     )
@@ -267,6 +268,7 @@ def sample_slices_for_edge(
             grid_spacing=(pixel_size, pixel_size),
             sample_interpolation_order=0,
             image_voxel_size_um=image_voxel_size_um,
+            sample_fill_value=0,
             approx=approx,
         )
 
