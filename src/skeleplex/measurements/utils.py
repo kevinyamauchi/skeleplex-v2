@@ -2,7 +2,6 @@ import logging  # noqa
 import networkx as nx
 import numpy as np
 import pandas as pd
-import trimesh
 import trimesh as tri
 from scipy.interpolate import Rbf
 from scipy.spatial import Delaunay
@@ -22,6 +21,13 @@ logging.basicConfig(level=logging.INFO)
 def unit_vector(vector):
     """Returns the unit vector of the vector."""
     return np.squeeze(np.asarray(vector / np.linalg.norm(vector)))
+
+
+def grey2rgb(image):
+    """Convert a grayscale image to RGB."""
+    image = np.stack([image] * 3, axis=-1)
+    image = (image - image.min()) / (image.max() - image.min()) * 255
+    return image.astype(np.uint8)
 
 
 def get_normal_of_plane(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray):
@@ -213,12 +219,12 @@ def fit_surface_to_pointcloud_rbf_pca(points: np.ndarray, smooth=0.2, percentile
     return vertices, faces
 
 
-def get_normal_of_closest_surface_point(mesh: trimesh.Trimesh, points: np.ndarray):
+def get_normal_of_closest_surface_point(mesh: tri.Trimesh, points: np.ndarray):
     """Computes the normal of the surface at the closest point to a set of points.
 
     Parameters
     ----------
-    mesh : trimesh.Trimesh
+    mesh : tri.Trimesh
         The mesh representing the surface.
     points : np.ndarray
         An array of shape (n_points, 3) containing the 3D coordinates of the points.
@@ -232,7 +238,7 @@ def get_normal_of_closest_surface_point(mesh: trimesh.Trimesh, points: np.ndarra
     """
     # Find the closest point on the surface
     _, distance, closest_triangle = mesh.nearest.on_surface(points)
-    normals = trimesh.triangles.normals(mesh.triangles)[0]
+    normals = tri.triangles.normals(mesh.triangles)[0]
     normal_dict = {}
     distance_dict = {}
     for i in range(len(points)):
@@ -266,7 +272,7 @@ def distance_to_surface(vertices, faces, points):
     return closest_point, distance, triangles
 
 
-def get_normal_of_closest_point(mesh: trimesh.Trimesh, points: np.ndarray):
+def get_normal_of_closest_point(mesh: tri.Trimesh, points: np.ndarray):
     """Computes the normal of the surface at the closest point to a set of points.
 
     Parameters
