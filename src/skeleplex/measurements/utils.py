@@ -99,6 +99,11 @@ def rad2deg(rad):
     return rad * 180 / np.pi
 
 
+def radius_from_area(area):
+    """Calculate radius from area assuming circle."""
+    return np.sqrt(area / np.pi)
+
+
 def deg2rad(deg):
     """Convert degrees to radians."""
     return deg * np.pi / 180

@@ -200,20 +200,7 @@ def filter_and_segment_lumen(
 
 
 def filter_for_iterative_lumens(data_path, save_path):
-    """
-    Filter for iterative lumens.
-
-    This function removes slices that are surrounded by slices with label 2
-    and have no label 2 themselves.
-
-    Parameters
-    ----------
-    data_path : str
-        Path to the input data directory containing .h5 files.
-    save_path : str
-        Path to the output directory where filtered .h5 files will be saved.
-
-    """
+    """Filter for iterative lumens across multiple files in parallel."""
     if not os.path.exists(save_path):
         os.makedirs(save_path)
         logger.info(f"Created directory: {save_path}")
@@ -222,43 +209,56 @@ def filter_for_iterative_lumens(data_path, save_path):
     logger.info(f"Found {len(files)} files to process.")
     files = tqdm(files, desc="Processing files")
 
-    for file in files:
-        logger.info(f"Processing {file}")
+    # Pack arguments for parallel processing
+    file_args = [(f, data_path, save_path) for f in files]
 
-        with h5py.File(os.path.join(data_path, file), "r") as f:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=12) as executor:
+        list(executor.map(filter_file_for_iterative_lumens, file_args))
+
+
+def filter_file_for_iterative_lumens(args):
+    """Filter a single HDF5 file for iterative lumens."""
+    file, data_path, save_path = args
+    logger.info(f"Processing {file}")
+
+    input_file_path = os.path.join(data_path, file)
+    output_file_path = os.path.join(save_path, file)
+    try:
+        with h5py.File(input_file_path, "r") as f:
             image_slices = f["image"][:]
             segmentation_slices = f["segmentation"][:]
+    except Exception as e:
+        logger.warning(f"Error loading {file}: {e}")
+        return
 
-        if np.sum(segmentation_slices == 2) == 0:
-            continue  # Skip files with no segmentation slices labeled as 2
+    if np.sum(segmentation_slices == 2) == 0:
+        logger.info(f"No label 2 in file {file}, skipping.")
+        return
 
-        index_to_remove = []
-        for i, label_slice in enumerate(segmentation_slices):
-            # Skip the first and last slices
-            if i == 0 or i == len(segmentation_slices) - 1:
-                continue
-
-            # Check if the current slice has no label 2
-            # but is surrounded by slices with label 2
-            if np.sum(label_slice == 2) == 0:
-                logger.info(f"{i} in file {file} has no label 2")
-
-                if (
-                    np.sum(segmentation_slices[i - 1] == 2) > 0
-                    and np.sum(segmentation_slices[i + 1] == 2) > 0
-                ):
-                    index_to_remove.append(i)
-                    logger.info(f"Removing slice {i} from file {file}")
-        if len(index_to_remove) == 0:
-            logger.info(f"No slices to remove in file {file}")
+    index_to_remove = []
+    for i, label_slice in enumerate(segmentation_slices):
+        if i == 0 or i == len(segmentation_slices) - 1:
             continue
-        # Remove invalid slices
-        image_slice_filt = np.delete(image_slices, index_to_remove, axis=0)
-        label_slices_filt = np.delete(segmentation_slices, index_to_remove, axis=0)
 
-        with h5py.File(os.path.join(save_path, file), "w") as f:
-            f.create_dataset("image", data=image_slice_filt)
-            f.create_dataset("segmentation", data=label_slices_filt)
+        if np.sum(label_slice == 2) == 0:
+            if (
+                np.sum(segmentation_slices[i - 1] == 2) > 0
+                and np.sum(segmentation_slices[i + 1] == 2) > 0
+            ):
+                index_to_remove.append(i)
+
+    if not index_to_remove:
+        logger.info(f"No slices to remove in file {file}")
+        return
+
+    image_slice_filt = np.delete(image_slices, index_to_remove, axis=0)
+    label_slices_filt = np.delete(segmentation_slices, index_to_remove, axis=0)
+
+    with h5py.File(output_file_path, "w") as f:
+        f.create_dataset("image", data=image_slice_filt)
+        f.create_dataset("segmentation", data=label_slices_filt)
+
+    logger.info(f"Filtered and saved {file}")
 
 
 def fix_only_lumen(segmentation_slice):
@@ -282,7 +282,7 @@ def fix_only_lumen(segmentation_slice):
     return bool(boundary_lumen & boundary_background)
 
 
-def process_file(file):
+def add_file_to_graph(file):
     """Process a single HDF5 file."""
     try:
         with h5py.File(file, "r") as f:
@@ -432,7 +432,7 @@ def add_measurements_from_h5_to_graph(graph_path, input_path):
     # Process files in parallel
     results = []
     with concurrent.futures.ProcessPoolExecutor(max_workers=12) as executor:
-        for result in tqdm(executor.map(process_file, files), total=len(files)):
+        for result in tqdm(executor.map(add_file_to_graph, files), total=len(files)):
             if result:
                 results.append(result)
 
