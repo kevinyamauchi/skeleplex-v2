@@ -17,6 +17,7 @@ from torchvision import models
 from monai.transforms import EnsureType
 from PIL import Image
 from PyQt5.QtWidgets import QFileDialog, QLabel, QPushButton, QVBoxLayout, QWidget
+from torchvision.models import resnet50, ResNet50_Weights
 
 
 from torchvision.transforms import (
@@ -432,10 +433,14 @@ class H5DataModule(pl.LightningDataModule):
 class ResNet3ClassClassifier(pl.LightningModule):
     """A pl model for classifying images into 3 classes using ResNet50 model."""
 
-    def __init__(self, num_classes=3, pretrained=True):
+    def __init__(self, num_classes=3, pretrained=False):
         super().__init__()
         # Load pre-trained ResNet
-        self.resnet = models.resnet50(pretrained=pretrained)
+        
+        self.resnet = models.resnet50(weights = None)
+        if pretrained:
+            weights = ResNet50_Weights.DEFAULT
+            self.resnet = models.resnet50(weights=weights)
 
         # Replace the final fully connected layer to output `num_classes` classes
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_classes)
@@ -530,7 +535,7 @@ class ResNet3ClassPredictor:
         )
 
         # Load the model
-        self.model = ResNet3ClassClassifier(num_classes=num_classes)
+        self.model = ResNet3ClassClassifier(num_classes=num_classes, pretrained=False)
         # self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model = ResNet3ClassClassifier.load_from_checkpoint(model_path)
         self.model.to(self.device)
