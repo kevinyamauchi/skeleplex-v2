@@ -5,14 +5,15 @@ import h5py
 import numpy as np
 import skimage as ski
 import torch
-from skeleplex.graph.skeleton_graph import SkeletonGraph
+from tqdm import tqdm
+import concurrent.futures
 
 
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-from skeleplex.measurements.utils import grey2rgb
-import tqdm
+from skeleplex.measurements.utils import grey2rgb, radius_from_area
+from skeleplex.graph.skeleton_graph import SkeletonGraph
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -73,7 +74,7 @@ def filter_and_segment_lumen(
     # only do those that are npot in the save_path
     files = [f for f in files if not os.path.exists(os.path.join(save_path, f))]
     logger.info(f"Found {len(files)} files to process.")
-    files = tqdm.tqdm(files, desc="Processing files")
+    files = tqdm(files, desc="Processing files")
     for file in files:
         logger.info(f"Processing {file}")
 
@@ -219,7 +220,7 @@ def filter_for_iterative_lumens(data_path, save_path):
 
     files = [f for f in os.listdir(data_path) if f.endswith(".h5")]
     logger.info(f"Found {len(files)} files to process.")
-    files = tqdm.tqdm(files, desc="Processing files")
+    files = tqdm(files, desc="Processing files")
 
     for file in files:
         logger.info(f"Processing {file}")
@@ -260,116 +261,213 @@ def filter_for_iterative_lumens(data_path, save_path):
             f.create_dataset("segmentation", data=label_slices_filt)
 
 
-def add_measurements_from_h5_to_graph(
-    skeleton_graph: SkeletonGraph,
-    data_path: str,
-):
-    """
-    Add measurements from h5 files to the graph.
+def fix_only_lumen(segmentation_slice):
+    """Fix segmentation slices containing only lumen."""
+    boundary_lumen = set(
+        map(
+            tuple,
+            np.round(
+                np.concatenate(ski.measure.find_contours(segmentation_slice == 2, 0.5))
+            ).astype(np.int32),
+        )
+    )
+    boundary_background = set(
+        map(
+            tuple,
+            np.round(
+                np.concatenate(ski.measure.find_contours(segmentation_slice == 0, 0.5))
+            ).astype(np.int32),
+        )
+    )
+    return bool(boundary_lumen & boundary_background)
 
-    Parameters
-    ----------
-    skeleton_graph : SkeletonGraph
-        The skeleton graph to add the measurements to.
-    data_path : str
-        Path to the directory containing the h5 files.
-    """
-    files = os.listdir(data_path)
 
-    files = [f for f in files if f.endswith(".h5")]
-
-    def radius_from_area(area):
-        """Return the are of a circle based on its radius."""
-        return np.sqrt(area / np.pi)
-
-    tissue_thickness_dict = {}
-    lumen_diameter_dict = {}
-    total_area_dict = {}
-    minor_axis_dict = {}
-    major_axis_dict = {}
-    for file in files:
-        logger.info(file)
-        # load
-        with h5py.File(data_path + file, "r") as f:
+def process_file(file):
+    """Process a single HDF5 file."""
+    try:
+        with h5py.File(file, "r") as f:
+            image_slices = f["image"][:]
             segmentation_slices = f["segmentation"][:]
+    except Exception as e:
+        logger.warning(f"Error loading {file}: {e}")
+        return None
 
-        start_node = int(file.split("_")[3])
-        end_node = int(file.split("_")[5].split(".")[0])
+    file_name = os.path.basename(file)
+    start_node = int(file_name.split("_")[3])
+    end_node = int(file_name.split("_")[5].split(".")[0])
 
-        tissue_radius_branch = []
-        lumen_radius_branch = []
-        minor_axis_branch = []
-        major_axis_branch = []
-        total_area_branch = []
-        for slice_index in range(len(segmentation_slices)):
-            segmentation_slice = segmentation_slices[slice_index]
-            if np.sum(segmentation_slice == 2) > 0:
-                # open
-                lumen_label = (segmentation_slice == 2) * 1
-                tissue_label = (segmentation_slice == 1) * 1
+    tissue_radius_branch = []
+    lumen_radius_branch = []
+    minor_axis_branch = []
+    major_axis_branch = []
+    total_area_branch = []
 
-                lumen_props = ski.measure.regionprops(ski.measure.label(lumen_label))
-                tissue_props = ski.measure.regionprops(ski.measure.label(tissue_label))
-                if len(lumen_props) > 0:
-                    # get the one with biggest area
-                    lumen_props = sorted(
-                        lumen_props, key=lambda x: x.area, reverse=True
-                    )
-                    lumen_props = [lumen_props[0]]
-                if len(tissue_props) > 0:
-                    # get the one with biggest area
-                    tissue_props = sorted(
-                        tissue_props, key=lambda x: x.area, reverse=True
-                    )
-                    tissue_props = [tissue_props[0]]
+    for slice_index, (_, segmentation_slice) in enumerate(
+        zip(image_slices, segmentation_slices, strict=False)
+    ):
+        if np.sum(segmentation_slice == 2) > 0:
+            if np.sum(segmentation_slice == 1) == 0 and fix_only_lumen(
+                segmentation_slice
+            ):
+                logger.info(f"Fixing {file}, slice {slice_index}")
+                segmentation_slice[segmentation_slice == 2] = 1
+                segmentation_slices[slice_index] = segmentation_slice
 
-                if len(tissue_props) == 0:
-                    logger.info(f"no tissue props in slice {slice_index}, file {file}")
-                    continue
+            label_slice = ski.measure.label((segmentation_slice != 0).astype(np.uint8))
+            props = ski.measure.regionprops(label_slice)
 
-                lumen_area = lumen_props[0].area
-                tissue_area = tissue_props[0].area
-                total_area = lumen_area + tissue_area
-                total_radius = radius_from_area(total_area)
-                lumen_radius = radius_from_area(lumen_area)
-                tissue_radius = total_radius - lumen_radius
-                tissue_radius_branch.append(tissue_radius)
-                lumen_radius_branch.append(lumen_radius)
-                minor_axis = tissue_props[0].minor_axis_length
-                major_axis = tissue_props[0].major_axis_length
-                total_area_branch.append(total_area)
-
-            else:
-                # closed
-                label_slice = ski.measure.label((segmentation_slice != 0) * 1)
-                props = ski.measure.regionprops(label_slice)
-                # get the one with biggest area
-                if len(props) > 0:
-                    props = sorted(props, key=lambda x: x.area, reverse=True)
-                    props = [props[0]]
+            if props:
                 minor_axis = props[0].minor_axis_length
                 major_axis = props[0].major_axis_length
                 total_area = props[0].area
-                tissue_radius_branch.append(minor_axis / 2)
-                lumen_radius_branch.append(0)
-                total_area_branch.append(total_area)
                 minor_axis_branch.append(minor_axis)
                 major_axis_branch.append(major_axis)
+                total_area_branch.append(total_area)
 
-        tissue_thickness_dict[(start_node, end_node)] = np.mean(tissue_radius_branch)
-        lumen_diameter_dict[(start_node, end_node)] = 2 * np.mean(lumen_radius_branch)
-        total_area_dict[(start_node, end_node)] = np.mean(total_area_branch)
-        minor_axis_dict[(start_node, end_node)] = np.mean(minor_axis_branch)
-        major_axis_dict[(start_node, end_node)] = np.mean(major_axis_branch)
+            if np.sum(segmentation_slice == 1) > 0:
+                lumen_label = (segmentation_slice == 2).astype(np.uint8)
+                tissue_label = (segmentation_slice == 1).astype(np.uint8)
 
-        nx.set_edge_attributes(
-            skeleton_graph.graph, tissue_thickness_dict, name="tissue_thickness"
+                lumen_props = ski.measure.regionprops(ski.measure.label(lumen_label))
+                tissue_props = ski.measure.regionprops(ski.measure.label(tissue_label))
+
+                if lumen_props and tissue_props:
+                    lumen_area = lumen_props[0].area
+                    tissue_area = tissue_props[0].area
+                    total_area = lumen_area + tissue_area
+                    total_radius = radius_from_area(total_area)
+                    lumen_radius = radius_from_area(lumen_area)
+                    tissue_radius = total_radius - lumen_radius
+                    tissue_radius_branch.append(tissue_radius)
+                    lumen_radius_branch.append(lumen_radius)
+            else:
+                # no tissue label, full region is tissue
+                tissue_radius_branch.append(minor_axis / 2)
+                lumen_radius_branch.append(0)
+        else:
+            # completely closed (no lumen)
+            label_slice = ski.measure.label((segmentation_slice != 0).astype(np.uint8))
+            props = ski.measure.regionprops(label_slice)
+            if props:
+                minor_axis = props[0].minor_axis_length
+                major_axis = props[0].major_axis_length
+                total_area = props[0].area
+                minor_axis_branch.append(minor_axis)
+                major_axis_branch.append(major_axis)
+                total_area_branch.append(total_area)
+                tissue_radius_branch.append(minor_axis / 2)
+                lumen_radius_branch.append(0)
+
+    return (
+        start_node,
+        end_node,
+        np.mean(np.array(lumen_radius_branch) * 2),
+        np.std(np.array(lumen_radius_branch) * 2),
+        np.mean(tissue_radius_branch),
+        np.std(tissue_radius_branch),
+        np.mean(total_area_branch),
+        np.std(total_area_branch),
+        np.mean(minor_axis_branch),
+        np.std(minor_axis_branch),
+        np.mean(major_axis_branch),
+        np.std(major_axis_branch),
+    )
+
+
+def add_measurements_from_h5_to_graph(graph_path, input_path):
+    """
+    Add measurements from HDF5 files to the skeleton graph.
+
+    The slice names need to be in the format:
+
+    {base}_{name}_{start_node}_{end_node}.h5
+
+    Parameters
+    ----------
+    graph_path : str
+        Path to the skeleton graph JSON file.
+    input_path : str
+        Path to the directory containing HDF5 files with the segmented slices.
+
+    Returns
+    -------
+    SkeletonGraph
+        The updated skeleton graph with measurements added.
+    """
+    # Load skeleton graph
+    skeleton_graph = SkeletonGraph.from_json_file(graph_path)
+
+    # Prepare attributes
+    attribute_names = [
+        "lumen_diameter",
+        "tissue_thickness",
+        "total_area",
+        "minor_axis",
+        "major_axis",
+    ]
+    for attr in attribute_names + [f"{a}_sd" for a in attribute_names]:
+        nx.set_edge_attributes(skeleton_graph.graph, {}, name=attr)
+
+    measurement_dicts = {
+        key: {}
+        for key in (
+            "lumen_diameter",
+            "tissue_thickness",
+            "total_area",
+            "minor_axis",
+            "major_axis",
+            "lumen_diameter_sd",
+            "tissue_thickness_sd",
+            "total_area_sd",
+            "minor_axis_sd",
+            "major_axis_sd",
         )
-        nx.set_edge_attributes(
-            skeleton_graph.graph, lumen_diameter_dict, name="lumen_diameter"
-        )
-        nx.set_edge_attributes(skeleton_graph.graph, total_area_dict, name="total_area")
-        nx.set_edge_attributes(skeleton_graph.graph, minor_axis_dict, name="minor_axis")
-        nx.set_edge_attributes(skeleton_graph.graph, major_axis_dict, name="major_axis")
+    }
+
+    # Get list of HDF5 files
+    files = [f for f in os.listdir(input_path) if f.endswith(".h5")]
+    # add input path to files
+    files = [os.path.join(input_path, f) for f in files]
+
+    # Process files in parallel
+    results = []
+    with concurrent.futures.ProcessPoolExecutor(max_workers=12) as executor:
+        for result in tqdm(executor.map(process_file, files), total=len(files)):
+            if result:
+                results.append(result)
+
+    # Fill measurement dicts
+    for (
+        start_node,
+        end_node,
+        lumen_diameter_mean,
+        lumen_diameter_sd,
+        tissue_thickness_mean,
+        tissue_thickness_sd,
+        total_area_mean,
+        total_area_sd,
+        minor_axis_mean,
+        minor_axis_sd,
+        major_axis_mean,
+        major_axis_sd,
+    ) in results:
+        edge = (start_node, end_node)
+        measurement_dicts["lumen_diameter"][edge] = lumen_diameter_mean
+        measurement_dicts["lumen_diameter_sd"][edge] = lumen_diameter_sd
+        measurement_dicts["tissue_thickness"][edge] = tissue_thickness_mean
+        measurement_dicts["tissue_thickness_sd"][edge] = tissue_thickness_sd
+        measurement_dicts["total_area"][edge] = total_area_mean
+        measurement_dicts["total_area_sd"][edge] = total_area_sd
+        measurement_dicts["minor_axis"][edge] = minor_axis_mean
+        measurement_dicts["minor_axis_sd"][edge] = minor_axis_sd
+        measurement_dicts["major_axis"][edge] = major_axis_mean
+        measurement_dicts["major_axis_sd"][edge] = major_axis_sd
+
+    # Set graph attributes
+    for attr, attr_dict in measurement_dicts.items():
+        nx.set_edge_attributes(skeleton_graph.graph, attr_dict, name=attr)
+    logger.info("save")
+    # Save
+    skeleton_graph.to_json_file(graph_path)
 
     return skeleton_graph
