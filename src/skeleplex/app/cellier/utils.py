@@ -2,34 +2,40 @@
 
 from cellier.models.data_manager import DataManager
 from cellier.models.scene import (
+    AxisAlignedRegionSelector,
     Canvas,
     CoordinateSystem,
     DimsManager,
     PerspectiveCamera,
+    RangeTuple,
     Scene,
     TrackballCameraController,
 )
 from cellier.models.viewer import SceneManager, ViewerModel
 from cellier.slicer.slicer import SlicerType
+from cellier.types import CoordinateSpace
 from cellier.viewer_controller import CellierController
 from qtpy.QtWidgets import QWidget
 
 
-def make_viewer_model() -> ViewerModel:
+def make_viewer_model() -> tuple[ViewerModel, str]:
     """Make the viewer controller."""
     # make the data manager (empty for now)
     data_manager = DataManager(stores={})
 
     # make the scene coordinate system
     coordinate_system_3d = CoordinateSystem(
-        name="scene_3d", axis_labels=["z", "y", "x"]
+        name="scene_3d", axis_labels=("z", "y", "x")
     )
     dims_3d = DimsManager(
-        point=(0, 0, 0),
-        margin_negative=(0, 0, 0),
-        margin_positive=(0, 0, 0),
         coordinate_system=coordinate_system_3d,
-        displayed_dimensions=(0, 1, 2),
+        range=(RangeTuple(0, 100, 1), RangeTuple(0, 100, 1), RangeTuple(0, 100, 1)),
+        selection=AxisAlignedRegionSelector(
+            space_type=CoordinateSpace.WORLD,
+            ordered_dims=(0, 1, 2),
+            n_displayed_dims=3,
+            index_selection=(slice(None, None), slice(None, None), slice(None, None)),
+        ),
     )
 
     # make the canvas
