@@ -122,6 +122,13 @@ class DataSelectorWidget(FlatHGroupBox):
         else:
             self.edge_mode_box.selection_box.setText(str(event))
 
+    def _on_node_selection_change(self, event):
+        """Update the GUI when the selected nodes change."""
+        if len(event) == 0:
+            self.node_mode_box.selection_box.setText("")
+        else:
+            self.node_mode_box.selection_box.setText(str(event))
+
 
 class AppControlsWidget(QWidget):
     """A widget for the application controls.

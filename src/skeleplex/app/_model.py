@@ -109,6 +109,33 @@ class SkelePlexApp(Application):
         # store the highlighted edge keys
         self.data.view._highlighted_edge_keys = highlighted_edge_keys
 
+    def _on_node_selection_change(self, event) -> None:
+        """Handle a change in the node selection."""
+        print(event)
+        if len(event) == 0:
+            coordinates = np.empty((0, 3))
+            highlighted_node_keys = np.empty((0,))
+        else:
+            coordinates = []
+            highlighted_node_keys = []
+            for node_key in event:
+                print(node_key)
+                view_coordinate_index = np.argwhere(
+                    self.data.view.node_keys == node_key
+                )[0]
+                coordinates.append(
+                    self.data.view.node_coordinates[view_coordinate_index]
+                )
+                highlighted_node_keys.append(node_key)
+            coordinates = np.atleast_2d(np.concatenate(coordinates))
+            highlighted_node_keys = np.array(highlighted_node_keys)
+
+        # set the highlight in the rendered scene
+        self._viewer.main_canvas.set_node_highlight(node_coordinates=coordinates)
+
+        # store the highlighted edge keys
+        self.data.view._highlighted_node_keys = highlighted_node_keys
+
     def _register_data_actions(self) -> None:
         """Register actions for adding/removing data to/from the viewer."""
         # add points
@@ -152,6 +179,17 @@ class SkelePlexApp(Application):
 
         These all interface with the SelectionManager.
         """
+        # connect the edge selection events
+        self._connect_edge_selection_events()
+
+        # connect the node selection events
+        self._connect_node_selection_events()
+
+    def _connect_edge_selection_events(self) -> None:
+        """Connect the events for handling edge selections in the main canvas.
+
+        These all interface with the SelectionManager's edge selection.
+        """
         # the widget containing all the selection GUI
         selection_widget = self._main_window.app_controls.widget().selection_box
 
@@ -173,6 +211,32 @@ class SkelePlexApp(Application):
             selection_widget._on_edge_selection_change
         )
 
+    def _connect_node_selection_events(self) -> None:
+        """Connect the events for handling node selections in the main canvas.
+
+        These all interface with the SelectionManager's node selection.
+        """
+        # the widget containing all the selection GUI
+        selection_widget = self._main_window.app_controls.widget().selection_box
+
+        # events for synchronizing the edge selection enabled state with the GUI.
+        selection_widget.node_mode_box.enable_checkbox.stateChanged.connect(
+            self.data.selection._on_node_enabled_update
+        )
+
+        # event for synchronizing the edge selection values with the viewer.
+        self.data.selection.node.events.values.connect(self._on_node_selection_change)
+
+        # event for attaching/detaching the edge selection callback.
+        self.data.selection.node.events.enabled.connect(
+            self._on_node_selection_enabled_changed
+        )
+
+        # event for updating the edge selection GUI when the selection changes.
+        self.data.selection.node.events.values.connect(
+            selection_widget._on_node_selection_change
+        )
+
     def _on_edge_selection_enabled_changed(self, enabled: bool):
         """Callback to update the viewer when the edge selection is enabled/disabled.
 
@@ -188,4 +252,38 @@ class SkelePlexApp(Application):
             # detach the selection callback
             self._viewer.main_canvas.remove_skeleton_edge_callback(
                 callback=self.data._on_edge_selection_click,
+            )
+
+    def _on_node_selection_changed(self, enabled: bool):
+        """Callback to update the viewer when the node selection is enabled/disabled.
+
+        This attached/detaches the node selection callback from the main viewer.
+        """
+        if enabled:
+            # attach the selection callback
+            self._viewer.main_canvas.add_skeleton_node_callback(
+                callback=self.data._on_node_selection_click,
+            )
+
+        else:
+            # detach the selection callback
+            self._viewer.main_canvas.remove_skeleton_node_callback(
+                callback=self.data._on_node_selection_click,
+            )
+
+    def _on_node_selection_enabled_changed(self, enabled: bool):
+        """Callback to update the viewer when the node selection is enabled/disabled.
+
+        This attached/detaches the node selection callback from the main viewer.
+        """
+        if enabled:
+            # attach the selection callback
+            self._viewer.main_canvas.add_skeleton_node_callback(
+                callback=self.data._on_node_selection_click,
+            )
+
+        else:
+            # detach the selection callback
+            self._viewer.main_canvas.remove_skeleton_node_callback(
+                callback=self.data._on_node_selection_click,
             )
