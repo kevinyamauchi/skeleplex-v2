@@ -119,7 +119,7 @@ class MainCanvasController:
 
         # make the highlight points material
         highlight_points_material_3d = PointsUniformMaterial(
-            size=20, color=(1, 0, 1, 1), size_coordinate_space="data"
+            size=20, color=(0, 1, 0, 1), size_coordinate_space="data"
         )
 
         # make the highlight points model
@@ -219,8 +219,6 @@ class MainCanvasController:
         if not self._skeleton.populated():
             # don't do anything if the skeleton is not rendered
             return
-
-        print(node_coordinates)
 
         self._skeleton.node_highlight_store.coordinates = node_coordinates.astype(
             np.float32

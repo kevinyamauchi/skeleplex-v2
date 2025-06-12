@@ -86,7 +86,6 @@ class SkelePlexApp(Application):
 
     def _on_edge_selection_change(self, event) -> None:
         """Handle a change in the edge selection."""
-        print(event)
         if len(event) == 0:
             coordinates = np.empty((0, 3))
             highlighted_edge_keys = np.empty((0, 2))
@@ -94,7 +93,6 @@ class SkelePlexApp(Application):
             coordinates = []
             highlighted_edge_keys = []
             for edge_index in event:
-                print(edge_index)
                 edge_mask = np.all(
                     np.equal(self.data.view.edge_keys, np.asarray(edge_index)), axis=1
                 )
@@ -111,7 +109,6 @@ class SkelePlexApp(Application):
 
     def _on_node_selection_change(self, event) -> None:
         """Handle a change in the node selection."""
-        print(event)
         if len(event) == 0:
             coordinates = np.empty((0, 3))
             highlighted_node_keys = np.empty((0,))
@@ -119,7 +116,6 @@ class SkelePlexApp(Application):
             coordinates = []
             highlighted_node_keys = []
             for node_key in event:
-                print(node_key)
                 view_coordinate_index = np.argwhere(
                     self.data.view.node_keys == node_key
                 )[0]

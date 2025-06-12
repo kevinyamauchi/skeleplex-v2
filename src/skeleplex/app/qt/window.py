@@ -29,6 +29,7 @@ class MainWindow(QModelMainWindow):
 
     def __init__(self, app: Application):
         super().__init__(app)
+
         # set the background color
         self.setStyleSheet(MAIN_WINDOW_STYLE)
 
