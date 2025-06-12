@@ -119,7 +119,7 @@ class MainCanvasController:
 
         # make the highlight points material
         highlight_points_material_3d = PointsUniformMaterial(
-            size=20, color=(1, 0, 1, 1), size_coordinate_space="data"
+            size=20, color=(0, 1, 0, 1), size_coordinate_space="data"
         )
 
         # make the highlight points model
