@@ -9,6 +9,7 @@ from psygnal import EventedModel, Signal, SignalGroup
 from pydantic.types import FilePath
 
 from skeleplex.graph import SkeletonGraph
+from skeleplex.graph.constants import NODE_COORDINATE_KEY
 from skeleplex.visualize.spline import line_segment_coordinates_from_spline
 
 log = logging.getLogger(__name__)
@@ -72,6 +73,8 @@ class DataView:
         self._edge_keys: np.ndarray | None = None
         self._highlighted_edge_keys: np.ndarray | None = None
         self._node_coordinates: np.ndarray | None = None
+        self._node_keys: np.ndarray | None = None
+        self._highlighted_node_keys: np.ndarray | None = None
 
     @property
     def mode(self) -> ViewMode:
@@ -93,6 +96,23 @@ class DataView:
         (n_nodes, 3) array of node coordinates.
         """
         return self._node_coordinates
+
+    @property
+    def node_keys(self) -> np.ndarray | None:
+        """Get the keys of the nodes in the rendered graph.
+
+        (n_nodes,) array of node keys. These are index-matched with
+        the node_coordinates array.
+        """
+        return self._node_keys
+
+    @property
+    def highlighted_node_keys(self) -> np.ndarray | None:
+        """Get the indices of the highlighted nodes in the rendered graph.
+
+        (n_highlighted_nodes,) array of node indices.
+        """
+        return self._highlighted_node_keys
 
     @property
     def edge_coordinates(self) -> np.ndarray | None:
@@ -126,10 +146,30 @@ class DataView:
         """
         return self._highlighted_edge_keys
 
-    def _get_view_all(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Get the view for all data."""
+    def _get_view_all(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Get the view for all data.
+
+        Returns
+        -------
+        node_coordinates : np.ndarray
+            (n_nodes,3) array of the coordinates of
+            the rendered nodes in the skeleton graph.
+        node_keys : np.ndarray
+            (n_nodes) array of the keys of the nodes in the skeleton graph.
+        edge_coordinates : np.ndarray
+            (n_edges x 2 x n_points_per_edge, 3) array of the coordinates of
+            the rendered edges in the skeleton graph.
+        edge_indices : np.ndarray
+            The indices of the edges in the skeleton graph.
+        edge_keys : np.ndarray
+            The keys of the edge for each edge coordinate in the skeleton graph.
+
+        """
         return (
             self._data_manager.node_coordinates,
+            self._data_manager.node_keys,
             self._data_manager.edge_coordinates,
             self._data_manager.edge_indices,
             self._data_manager.edge_keys,
@@ -146,6 +186,7 @@ class DataView:
         if self._mode == ViewMode.ALL:
             (
                 self._node_coordinates,
+                self._node_keys,
                 self._edge_coordinates,
                 self._edge_indices,
                 self._edge_keys,
@@ -174,39 +215,35 @@ class EdgeSelectionManager(EventedModel):
     values: set[tuple[int, int]]
 
 
+class NodeSelectionManager(EventedModel):
+    """Class to manage selection of nodes in the viewer.
+
+    Parameters
+    ----------
+    enabled : bool
+        Set to true if the edge selection is enabled.
+        The default value is False.
+    values : set[int] | None
+        The selected nodes.
+    """
+
+    enabled: bool
+    values: set[int]
+
+
 class SelectionManager(EventedModel):
     """Class to manage selection of data in the viewer."""
 
     edge: EdgeSelectionManager
+    node: NodeSelectionManager
 
     def _on_edge_enabled_update(self, event):
+        """Callback when the UI updates the edge selection enabled state."""
         self.edge.enabled = event > 0
 
-    def _on_edge_selection_update(self, event):
-        """Callback for the edge picking event from the renderer.
-
-        Parameters
-        ----------
-        event : pygfx.PointerEvent
-            The event data from the pygfx click event.
-        """
-        if ("Control" not in event.modifiers) or event.button != 1:
-            # only pick with control + LMB
-            return
-
-        # get the index of the vertex the click was close to
-        vertex_index = event.pick_info["vertex_index"]
-
-        if vertex_index in self.edge.values:
-            # if the edge is already selected, deselect it it.
-            self.edge.values.remove(vertex_index)
-        else:
-            # if the edge is not selected, select it.
-            if "Shift" not in event.modifiers:
-                # if shift is not pressed, clear the selection
-                self.edge.values.clear()
-            self.edge.values.add(vertex_index)
-        self.edge.events.values.emit(self.edge.values)
+    def _on_node_enabled_update(self, event):
+        """Callback when the UI updates the node selection enabled state."""
+        self.node.enabled = event > 0
 
 
 class DataEvents(SignalGroup):
@@ -231,6 +268,10 @@ class DataManager:
         The events for the DataManager class.
     node_coordinates : np.ndarray | None
         The coordinates of the nodes in the skeleton graph.
+        This is None when the skeleton hasn't been loaded.
+    node_keys : np.ndarray | None
+        The keys for the nodes in the skeleton graph.
+        This is index-matched with the node_coordinates array.
         This is None when the skeleton hasn't been loaded.
     edge_coordinates : np.ndarray | None
         The coordinates for rendering the edges in the skeleton graph
@@ -259,6 +300,7 @@ class DataManager:
         if selection is None:
             selection = SelectionManager(
                 edge=EdgeSelectionManager(enabled=False, values=set()),
+                node=NodeSelectionManager(enabled=False, values=set()),
             )
         self._selection = selection
 
@@ -299,6 +341,15 @@ class DataManager:
         (n_nodes, 3) array of node coordinates.
         """
         return self._node_coordinates
+
+    @property
+    def node_keys(self) -> np.ndarray | None:
+        """Get the keys of the nodes in the skeleton graph.
+
+        (n_nodes,) array of node keys. These are index-matched with
+        the node_coordinates array.
+        """
+        return self._node_keys
 
     @property
     def edge_coordinates(self) -> np.ndarray | None:
@@ -350,8 +401,16 @@ class DataManager:
         todo: make it possible to update without recompute everything
         """
         if self._skeleton_graph is None:
-            return None
-        self._node_coordinates = self.skeleton_graph.node_coordinates_array
+            # don't do anything if the skeleton graph is not loaded
+            return
+
+        node_coordinates = []
+        node_keys = []
+        for key, node_data in self.skeleton_graph.graph.nodes(data=True):
+            node_keys.append(key)
+            node_coordinates.append(node_data[NODE_COORDINATE_KEY])
+        self._node_coordinates = np.array(node_coordinates, dtype=np.float32)
+        self._node_keys = np.array(node_keys, dtype=np.int32)
 
     def _update_edge_coordinates(self) -> None:
         """Get and store the edge spline coordinates from the skeleton graph.
@@ -439,3 +498,46 @@ class DataManager:
                 self.selection.edge.values.clear()
             self.selection.edge.values.add(edge_key)
         self.selection.edge.events.values.emit(self.selection.edge.values)
+
+    def _on_node_selection_click(
+        self, event: MouseCallbackData, click_source: str = "data"
+    ):
+        """Callback for the node picking event from the renderer.
+
+        Parameters
+        ----------
+        event : pygfx.PointerEvent
+            The event data from the pygfx click event.
+        click_source : str
+            The source of the click event. Should be either "data" (the main visual)
+            or "highlight" (the highlight visual).
+        """
+        if (
+            (MouseModifiers.CTRL not in event.modifiers)
+            or (event.button != MouseButton.LEFT)
+            or (event.type != MouseEventType.PRESS)
+        ):
+            # only pick with control + LMB
+            return
+
+        # get the index of the vertex the click was close to
+        vertex_index = event.pick_info["vertex_index"]
+
+        # get the edge key from the vertex index
+        if click_source == "data":
+            node_key = int(self.view.node_keys[vertex_index])
+        elif click_source == "highlight":
+            node_key = int(self.view.highlighted_node_keys[vertex_index])
+        else:
+            raise ValueError(f"Unknown click source: {click_source}")
+
+        if node_key in self.selection.node.values:
+            # if the edge is already selected, deselect it.
+            self.selection.node.values.remove(node_key)
+        else:
+            # if the edge is not selected, select it.
+            if MouseModifiers.SHIFT not in event.modifiers:
+                # if shift is not pressed, clear the selection
+                self.selection.node.values.clear()
+            self.selection.node.values.add(node_key)
+        self.selection.node.events.values.emit(self.selection.node.values)
