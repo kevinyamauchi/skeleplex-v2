@@ -76,6 +76,10 @@ docs = [
     "mkdocs-gen-files",
     "mkdocs-section-index"
 ]
+# all dev dependencies
+dev-all = [
+    "skeleplex-v2[napari,test,viz,cellier,docs,dev]"
+]
 
 [project.urls]
 homepage = "https://github.com/kevinyamauchi/skeleplex-v2"
