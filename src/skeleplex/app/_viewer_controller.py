@@ -220,8 +220,6 @@ class MainCanvasController:
             # don't do anything if the skeleton is not rendered
             return
 
-        print(node_coordinates)
-
         self._skeleton.node_highlight_store.coordinates = node_coordinates.astype(
             np.float32
         )
