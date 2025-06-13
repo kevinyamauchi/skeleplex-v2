@@ -92,9 +92,9 @@ class SkelePlexApp(Application):
         """Set the camera in the main viewer to look at the skeleton."""
         self._viewer.main_canvas.look_at_skeleton()
 
-    def add_auxiliary_widget(self, widget) -> None:
-        """Add a dock widget to the main window."""
-        self._main_window.add_auxiliary_widget(widget)
+    def add_auxiliary_widget(self, widget, name: str) -> None:
+        """Add a widget to the right dock of the main window."""
+        self._main_window.add_auxiliary_widget(widget, name)
 
     def show(self) -> None:
         """Show the app."""
