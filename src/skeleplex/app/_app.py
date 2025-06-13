@@ -7,6 +7,7 @@ from app_model import Application
 from app_model.types import Action, MenuRule
 
 from skeleplex.app._constants import CommandId, MenuId
+from skeleplex.app._curate import CurationManager
 from skeleplex.app._data import (
     DataManager,
     SelectionManager,
@@ -38,6 +39,11 @@ class SkelePlexApp(Application):
             data = DataManager(file_paths=SkeletonDataPaths(), selection=selection)
         self._data = data
 
+        # add the curation manager
+        self._curate = CurationManager(
+            data_manager=self._data,
+        )
+
         # make the viewer model
         self._viewer = ViewerController(parent_widget=self._main_window)
 
@@ -64,6 +70,11 @@ class SkelePlexApp(Application):
         """Get the data manager."""
         return self._data
 
+    @property
+    def curate(self) -> CurationManager:
+        """Get the curation manager."""
+        return self._curate
+
     def load_main_viewer(self) -> None:
         """Add the data to the main viewer."""
         log.debug("Loading data into the main viewer...")
@@ -79,6 +90,10 @@ class SkelePlexApp(Application):
     def look_at_skeleton(self) -> None:
         """Set the camera in the main viewer to look at the skeleton."""
         self._viewer.main_canvas.look_at_skeleton()
+
+    def add_auxiliary_widget(self, widget) -> None:
+        """Add a dock widget to the main window."""
+        self._main_window.add_auxiliary_widget(widget)
 
     def show(self) -> None:
         """Show the app."""
