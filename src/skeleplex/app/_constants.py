@@ -12,6 +12,8 @@ class CommandId(str, Enum):
     QUIT = "skeleplex.quit"
     LOAD_DATA = "skeleplex.load_data"
     LOOK_AT_SKELETON = "skeleplex.look_at_skeleton"
+    PASTE_EDGE_SELECTION = "skeleplex.paste_edge_selection"
+    PASTE_NODE_SELECTION = "skeleplex.paste_node_selection"
 
     UNDO = "skeleplex.undo"
     REDO = "skeleplex.redo"

@@ -2,6 +2,7 @@
 
 from app_model import Application
 from app_model.backends.qt import QModelMainWindow
+from PyQt6.QtWidgets import QDockWidget
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QLabel, QStatusBar, QWidget
 
@@ -50,6 +51,12 @@ class MainWindow(QModelMainWindow):
 
         # create the status bar at the bottom of the window
         self._create_status_bar()
+
+    def add_auxiliary_widget(self, widget: QWidget, name: str = ""):
+        """Add a widget to the auxiliary views dock."""
+        dock_widget = QDockWidget(name)
+        dock_widget.setWidget(widget)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_widget)
 
     def _create_app_controls(self):
         self.app_controls = AppControlsDock(parent=self)

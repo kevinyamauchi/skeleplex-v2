@@ -1,6 +1,7 @@
 """Module for handling data in the SkelePlex application."""
 
 import logging
+from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
@@ -231,11 +232,61 @@ class NodeSelectionManager(EventedModel):
     values: set[int]
 
 
+@dataclass(frozen=True)
+class EdgeSelectionPasteRequest:
+    """Selected edges to paste.
+
+    This is used for passing selected edges to the paste operation.
+    For example, when pasting edges from the selection to a
+    GUI widget.
+
+    Parameters
+    ----------
+    edge_key : set[tuple[int, int]]
+        The keys of the selected edges.
+    """
+
+    edge_keys: set[tuple[int, int]]
+
+
+@dataclass(frozen=True)
+class NodeSelectionPasteRequest:
+    """Selected nodes to paste.
+
+    This is used for passing selected nodes to the paste operation.
+    For example, when pasting nodes from the selection to a
+    GUI widget.
+
+    Parameters
+    ----------
+    node_keys : set[int]
+        The keys of the selected nodes.
+    """
+
+    node_keys: set[int]
+
+
 class SelectionManager(EventedModel):
     """Class to manage selection of data in the viewer."""
 
     edge: EdgeSelectionManager
     node: NodeSelectionManager
+
+    def _make_edge_selection_paste_request(self):
+        """Create a paste request for the selected edges.
+
+        This emits the request as a SelectionManager.events.edge signal.
+        """
+        request = EdgeSelectionPasteRequest(edge_keys=self.edge.values)
+        self.events.edge.emit(request)
+
+    def _make_node_selection_paste_request(self):
+        """Create a paste request for the selected nodes.
+
+        This emits the request as a SelectionManager.events.node signal.
+        """
+        request = NodeSelectionPasteRequest(node_keys=self.node.values)
+        self.events.node.emit(request)
 
     def _on_edge_enabled_update(self, event):
         """Callback when the UI updates the edge selection enabled state."""

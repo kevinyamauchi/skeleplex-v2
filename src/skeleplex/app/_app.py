@@ -4,9 +4,10 @@ import logging
 
 import numpy as np
 from app_model import Application
-from app_model.types import Action, MenuRule
+from app_model.types import Action, KeyBindingRule, KeyCode, KeyMod, MenuRule
 
 from skeleplex.app._constants import CommandId, MenuId
+from skeleplex.app._curate import CurationManager
 from skeleplex.app._data import (
     DataManager,
     SelectionManager,
@@ -27,28 +28,34 @@ class SkelePlexApp(Application):
     ) -> None:
         super().__init__("SkelePlex")
 
+        # make the data model
+        if data is None:
+            data = DataManager(file_paths=SkeletonDataPaths(), selection=selection)
+        self._data = data
+
+        # add the curation manager
+        self._curate = CurationManager(
+            data_manager=self._data,
+        )
+
+        # make the viewer model
+        self._viewer = ViewerController(parent_widget=None)
+        # self._viewer = ViewerController(parent_widget=self._main_window)
+
+        # ACTIONS is a list of Action objects.
+        for action in ACTIONS:
+            self.register_action(action)
+        self._register_data_actions()
+
         self._main_window = MainWindow(
             app=self,
         )
         # This will build a menu bar based on these menus
         self._main_window.setModelMenuBar([MenuId.FILE, MenuId.EDIT, MenuId.DATA])
 
-        # make the data model
-        if data is None:
-            data = DataManager(file_paths=SkeletonDataPaths(), selection=selection)
-        self._data = data
-
-        # make the viewer model
-        self._viewer = ViewerController(parent_widget=self._main_window)
-
         for canvas in self._viewer._backend._canvas_widgets.values():
             # add the canvas widgets
             self._main_window._set_main_viewer_widget(canvas)
-
-        # ACTIONS is a list of Action objects.
-        for action in ACTIONS:
-            self.register_action(action)
-        self._register_data_actions()
 
         # connect the data events
         self._connect_data_events()
@@ -63,6 +70,11 @@ class SkelePlexApp(Application):
     def data(self) -> DataManager:
         """Get the data manager."""
         return self._data
+
+    @property
+    def curate(self) -> CurationManager:
+        """Get the curation manager."""
+        return self._curate
 
     def load_main_viewer(self) -> None:
         """Add the data to the main viewer."""
@@ -79,6 +91,10 @@ class SkelePlexApp(Application):
     def look_at_skeleton(self) -> None:
         """Set the camera in the main viewer to look at the skeleton."""
         self._viewer.main_canvas.look_at_skeleton()
+
+    def add_auxiliary_widget(self, widget, name: str) -> None:
+        """Add a widget to the right dock of the main window."""
+        self._main_window.add_auxiliary_widget(widget, name)
 
     def show(self) -> None:
         """Show the app."""
@@ -154,6 +170,53 @@ class SkelePlexApp(Application):
             )
         )
 
+        self.register_action(
+            Action(
+                id=CommandId.PASTE_EDGE_SELECTION,
+                title="Paste edge selection",
+                icon="fa6-solid:paste",
+                callback=self.data.selection._make_edge_selection_paste_request,
+                menus=[MenuRule(id=MenuId.DATA)],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD)
+                ],
+            )
+        )
+        self.register_action(
+            Action(
+                id=CommandId.PASTE_NODE_SELECTION,
+                title="Paste node selection",
+                icon="fa6-solid:paste",
+                callback=self.data.selection._make_node_selection_paste_request,
+                menus=[MenuRule(id=MenuId.DATA)],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyF)
+                ],
+            )
+        )
+        self.register_action(
+            Action(
+                id=CommandId.UNDO,
+                title="Undo",
+                icon="fa6-solid:rotate-left",
+                callback=self.curate.undo,
+                menus=[MenuRule(id=MenuId.EDIT)],
+                keybindings=[KeyBindingRule(primary=KeyMod.CtrlCmd | KeyCode.KeyZ)],
+            )
+        )
+        self.register_action(
+            Action(
+                id=CommandId.REDO,
+                title="Redo",
+                icon="fa6-solid:rotate-right",
+                callback=self.curate.redo,
+                menus=[MenuRule(id=MenuId.EDIT)],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ)
+                ],
+            )
+        )
+
     def _connect_data_events(self) -> None:
         """Connect the events for handling changes in the data."""
         # event for when the data loading button is pressed
@@ -207,6 +270,9 @@ class SkelePlexApp(Application):
             selection_widget._on_edge_selection_change
         )
 
+        # event for pasting the edge selection
+        self.data.selection.events.edge.connect(selection_widget._on_edge_paste_request)
+
     def _connect_node_selection_events(self) -> None:
         """Connect the events for handling node selections in the main canvas.
 
@@ -232,6 +298,9 @@ class SkelePlexApp(Application):
         self.data.selection.node.events.values.connect(
             selection_widget._on_node_selection_change
         )
+
+        # event for pasting the node selection
+        self.data.selection.events.node.connect(selection_widget._on_node_paste_request)
 
     def _on_edge_selection_enabled_changed(self, enabled: bool):
         """Callback to update the viewer when the edge selection is enabled/disabled.
