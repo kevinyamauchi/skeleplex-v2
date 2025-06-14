@@ -198,10 +198,22 @@ class SkelePlexApp(Application):
             Action(
                 id=CommandId.UNDO,
                 title="Undo",
-                icon="fa6-solid:undo",
+                icon="fa6-solid:rotate-left",
                 callback=self.curate.undo,
                 menus=[MenuRule(id=MenuId.EDIT)],
                 keybindings=[KeyBindingRule(primary=KeyMod.CtrlCmd | KeyCode.KeyZ)],
+            )
+        )
+        self.register_action(
+            Action(
+                id=CommandId.REDO,
+                title="Redo",
+                icon="fa6-solid:rotate-right",
+                callback=self.curate.redo,
+                menus=[MenuRule(id=MenuId.EDIT)],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ)
+                ],
             )
         )
 

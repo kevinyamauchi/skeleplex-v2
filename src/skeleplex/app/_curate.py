@@ -181,7 +181,9 @@ class CurationManager:
     ):
         self._data = data_manager
 
+        # buffers for undo and redo operations
         self._undo_buffer = LIFOBuffer(max_size=10)
+        self._redo_buffer = LIFOBuffer(max_size=10)
 
     def delete_edge(
         self,
@@ -233,9 +235,39 @@ class CurationManager:
             # if there are no actions to undo, do nothing
             return
 
+        # store the current state in the redo buffer
+        self._redo_buffer.push(deepcopy(self._data.skeleton_graph))
+
         # restore the previous state from the undo buffer
         previous_state = self._undo_buffer.pop()
         self._data._skeleton_graph = previous_state
+
+        if redraw:
+            # redraw the graph
+            self._update_and_request_redraw()
+
+    def redo(self, redraw: bool = True) -> None:
+        """Redo the last undone action on the skeleton graph.
+
+        This method restores the skeleton graph to the next state in the undo buffer.
+        If there are no actions to redo, it does nothing.
+
+        Parameters
+        ----------
+        redraw : bool
+            Flag set to True to redraw the graph after redoing.
+            Defaults value is True.
+        """
+        if len(self._redo_buffer) == 0:
+            # if there are no actions to redo, do nothing
+            return
+
+        # store the current state in the undo buffer
+        self._undo_buffer.push(deepcopy(self._data.skeleton_graph))
+
+        # restore the next state from the redo buffer
+        next_state = self._redo_buffer.pop()
+        self._data._skeleton_graph = next_state
 
         if redraw:
             # redraw the graph
