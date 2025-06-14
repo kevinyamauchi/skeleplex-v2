@@ -3,8 +3,8 @@
 import logging
 
 import numpy as np
-from app_model import Application, types
-from app_model.types import Action, MenuRule
+from app_model import Application
+from app_model.types import Action, KeyBindingRule, KeyCode, KeyMod, MenuRule
 
 from skeleplex.app._constants import CommandId, MenuId
 from skeleplex.app._curate import CurationManager
@@ -177,7 +177,9 @@ class SkelePlexApp(Application):
                 icon="fa6-solid:paste",
                 callback=self.data.selection._make_edge_selection_paste_request,
                 menus=[MenuRule(id=MenuId.DATA)],
-                keybindings=[types.StandardKeyBinding.New],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD)
+                ],
             )
         )
         self.register_action(
@@ -187,6 +189,9 @@ class SkelePlexApp(Application):
                 icon="fa6-solid:paste",
                 callback=self.data.selection._make_node_selection_paste_request,
                 menus=[MenuRule(id=MenuId.DATA)],
+                keybindings=[
+                    KeyBindingRule(primary=KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyF)
+                ],
             )
         )
 
