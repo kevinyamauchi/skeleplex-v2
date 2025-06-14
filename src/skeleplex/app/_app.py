@@ -194,6 +194,16 @@ class SkelePlexApp(Application):
                 ],
             )
         )
+        self.register_action(
+            Action(
+                id=CommandId.UNDO,
+                title="Undo",
+                icon="fa6-solid:undo",
+                callback=self.curate.undo,
+                menus=[MenuRule(id=MenuId.EDIT)],
+                keybindings=[KeyBindingRule(primary=KeyMod.CtrlCmd | KeyCode.KeyZ)],
+            )
+        )
 
     def _connect_data_events(self) -> None:
         """Connect the events for handling changes in the data."""
