@@ -6,6 +6,7 @@ from enum import Enum
 
 import numpy as np
 from cellier.types import MouseButton, MouseCallbackData, MouseEventType, MouseModifiers
+from napari._vispy.visuals.bounding_box import BoundingBox
 from psygnal import EventedModel, Signal, SignalGroup
 from pydantic.types import FilePath
 
@@ -500,7 +501,9 @@ class DataManager:
     ) -> None:
         self._file_paths = file_paths
 
-        self._view = DataView(data_manager=self, mode=ViewMode.ALL)
+        self._view = DataView(
+            data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBox()
+        )
 
         # make the selection model
         if selection is None:
