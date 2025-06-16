@@ -6,7 +6,6 @@ from enum import Enum
 
 import numpy as np
 from cellier.types import MouseButton, MouseCallbackData, MouseEventType, MouseModifiers
-from napari._vispy.visuals.bounding_box import BoundingBox
 from psygnal import EventedModel, Signal, SignalGroup
 from pydantic.types import FilePath
 
@@ -78,9 +77,7 @@ class BoundingBoxData:
         return self._min_coordinate
 
     @min_coordinate.setter
-    def min_coordinate(
-        self, min_coordinate: np.ndarray | None, emit_event: bool = True
-    ):
+    def min_coordinate(self, min_coordinate: np.ndarray | None):
         """Set the minimum coordinate of the bounding box to be rendered.
 
         Parameters
@@ -89,14 +86,9 @@ class BoundingBoxData:
             The minimum coordinate of the axis-aligned bounding box.
             If None, no corner is set. The bounding box rendering mode
             requires min_coordinate to be set.
-        emit_event: bool
-            If set to True, the data event will be emitted when the
-            coordinate is set. Default value is True
         """
         self._min_coordinate = np.asarray(min_coordinate)
-
-        if emit_event:
-            self.events.data.emit()
+        self.events.data.emit()
 
     @property
     def max_coordinate(self) -> np.ndarray | None:
@@ -104,9 +96,7 @@ class BoundingBoxData:
         return self._max_coordinate
 
     @max_coordinate.setter
-    def max_coordinate(
-        self, max_coordinate: np.ndarray | None, emit_event: bool = True
-    ):
+    def max_coordinate(self, max_coordinate: np.ndarray | None):
         """Set the maximum coordinate of the bounding box to be rendered.
 
         Parameters
@@ -115,19 +105,51 @@ class BoundingBoxData:
             The maximum coordinate of the axis-aligned bounding box.
             If None, no corner is set. The bounding box rendering mode
             requires max_coordinate to be set.
-        emit_event: bool
-            If set to True, the data event will be emitted when the
-            coordinate is set. Default value is True
         """
         self._max_coordinate = np.asarray(max_coordinate)
-
-        if emit_event:
-            self.events.data.emit()
+        self.events.data.emit()
 
     @property
     def is_populated(self) -> bool:
         """Returns True if the min and max coordinate have been set."""
         return (self.min_coordinate is not None) and (self.max_coordinate is not None)
+
+
+@dataclass(frozen=True)
+class ViewRequest:
+    """Base Request to view data in the skeleton graph.
+
+    Do not use this class directly, use one of the subclasses instead.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class AllViewRequest(ViewRequest):
+    """Request to view all data in the skeleton graph.
+
+    This is used for passing requests to view all data in the skeleton graph.
+    It does not require any parameters.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class BoundingBoxViewRequest(ViewRequest):
+    """Request to view an axis-aligned bounding box region.
+
+    Parameters
+    ----------
+    minimum : np.ndarray
+        The minimum corner of the axis-aligned bounding box.
+    maximum : np.ndarray
+        The maximum corner of the axis-aligned bounding box.
+    """
+
+    minimum: np.ndarray
+    maximum: np.ndarray
 
 
 class ViewEvents(SignalGroup):
@@ -355,6 +377,27 @@ class DataView:
             edge_keys,
         )
 
+    def _on_view_request(self, request: BoundingBoxViewRequest):
+        """Handle a request to change the view.
+
+        This updates the bounding box and view mode based on the request.
+        This is generally called by the GUI widget events.
+        """
+        if isinstance(request, AllViewRequest):
+            self.mode = ViewMode.ALL
+
+        elif isinstance(request, BoundingBoxViewRequest):
+            # set the bounding box coordinates
+            # use the private attribute to prevent the event from being emitted.
+            self.bounding_box._min_coordinate = request.minimum
+            self.bounding_box._max_coordinate = request.maximum
+
+            # set the view mode to bounding box
+            self.mode = ViewMode.BOUNDING_BOX
+
+        else:
+            raise TypeError(f"Unknown view request type: {type(request)}.")
+
 
 class EdgeSelectionManager(EventedModel):
     """Class to manage selection of edge in the viewer.
@@ -502,7 +545,7 @@ class DataManager:
         self._file_paths = file_paths
 
         self._view = DataView(
-            data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBox()
+            data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
         )
 
         # make the selection model

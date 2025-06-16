@@ -226,8 +226,8 @@ class SkelePlexApp(Application):
         )
 
         # event for updating the view when the render button is pressed
-        self._main_window.app_controls.widget().view_box.view_all_controls.render_button.clicked.connect(
-            self.data.view.update
+        self._main_window.app_controls.widget().view_box.view_requested.connect(
+            self.data.view._on_view_request
         )
 
         # event for updating the main viewer when the data paths are updated

@@ -1,9 +1,11 @@
 """Dock widget for the Application Controls."""
 
+import sys
 from pathlib import Path
 
+import numpy as np
 from magicgui import magicgui
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -19,9 +21,12 @@ from qtpy.QtWidgets import (
 )
 
 from skeleplex.app._data import (
+    AllViewRequest,
+    BoundingBoxViewRequest,
     EdgeSelectionPasteRequest,
     NodeSelectionPasteRequest,
     SkeletonDataPaths,
+    ViewRequest,
 )
 from skeleplex.app.qt.flat_group_box import FlatHGroupBox, FlatVGroupBox
 from skeleplex.app.qt.styles import (
@@ -49,11 +54,16 @@ QRadioButton {
 class ViewAllModeControls(QGroupBox):
     """A widget for controlling the view all mode."""
 
+    render_requested = Signal(AllViewRequest)
+
     def __init__(self, parent=None):
         super().__init__(title="View all controls", parent=parent)
 
         # button to render the view
         self.render_button = QPushButton("Render", parent=self)
+
+        # connect the button click event
+        self.render_button.clicked.connect(self._on_render_button_clicked)
 
         # make the layout
         layout = QVBoxLayout()
@@ -63,6 +73,11 @@ class ViewAllModeControls(QGroupBox):
         # set the style
         self.setStyleSheet(GROUP_BOX_STYLE)
 
+    def _on_render_button_clicked(self):
+        """Handle the render button click event."""
+        # Emit a signal to request rendering the view
+        self.render_requested.emit(AllViewRequest())
+
 
 class ViewBoundingBoxControls(QGroupBox):
     """A widget for controlling the bounding box view mode."""
@@ -71,7 +86,12 @@ class ViewBoundingBoxControls(QGroupBox):
         super().__init__(title="Bounding box controls", parent=parent)
 
         # make widget for setting bounding box
-        self.bounding_box_widget = magicgui(self.update_bounding_box)
+        self.bounding_box_widget = magicgui(
+            self.update_bounding_box,
+            call_button="Render",
+            minimum={"options": {"max": sys.float_info.max}},
+            maximum={"options": {"max": sys.float_info.max}},
+        )
 
         # make the layout
         layout = QVBoxLayout()
@@ -79,20 +99,26 @@ class ViewBoundingBoxControls(QGroupBox):
         self.setLayout(layout)
 
         # set the style
+        self.setMaximumWidth(350)
         self.setStyleSheet(GROUP_BOX_STYLE)
 
     def update_bounding_box(
         self, minimum: tuple[float, float, float], maximum: tuple[float, float, float]
-    ):
+    ) -> BoundingBoxViewRequest:
         """Update the bounding box controls with new minimum and maximum values."""
         # This method can be extended to update the bounding box controls
         # based on the provided minimum and maximum coordinates.
         # For now, it is a placeholder.
-        pass
+        return BoundingBoxViewRequest(
+            minimum=np.asarray(minimum), maximum=np.asarray(maximum)
+        )
 
 
 class DataViewWidget(FlatHGroupBox):
     """A widget for selecting which regions of the data are in view."""
+
+    # signal gets emitted when a view request is made
+    view_requested = Signal(ViewRequest)
 
     def __init__(self, collapsible: bool = False, parent: QWidget | None = None):
         super().__init__(
@@ -118,15 +144,23 @@ class DataViewWidget(FlatHGroupBox):
         self.button_box.setAutoFillBackground(True)
         self.button_box.setLayout(layout)
 
-        # connect the mode buttons
-        self.mode_buttons.buttonClicked.connect(self._on_mode_changed)
-
         # Make the view all widget
         self.view_all_controls = ViewAllModeControls(parent=self)
 
         # make the view bounding box widget
         self.view_bounding_box_controls = ViewBoundingBoxControls(parent=self)
         self.view_bounding_box_controls.setVisible(False)
+
+        # connect the view all event
+        self.view_all_controls.render_requested.connect(self._on_view_requested)
+
+        # connect the view bounding box event
+        self.view_bounding_box_controls.bounding_box_widget.called.connect(
+            self._on_view_requested
+        )
+
+        # connect the mode buttons
+        self.mode_buttons.buttonClicked.connect(self._on_mode_changed)
 
         # Add the widgets
         self.add_widget(self.button_box)
@@ -142,6 +176,16 @@ class DataViewWidget(FlatHGroupBox):
             # Bounding box controls selected
             self.view_all_controls.setVisible(False)
             self.view_bounding_box_controls.setVisible(True)
+
+    def _on_view_requested(self, request: ViewRequest):
+        """Relay the view request when one of the subwidgets make a request.
+
+        Parameters
+        ----------
+        request : ViewRequest
+            The view request to relay.
+        """
+        self.view_requested.emit(request)
 
 
 class SelectionModeWidget(QGroupBox):
