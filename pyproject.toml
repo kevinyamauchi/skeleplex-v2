@@ -55,9 +55,10 @@ dependencies = [
 # "extras" (e.g. for `pip install .[test]`)
 [project.optional-dependencies]
 # for visualization
-napari = ["napari[all]"]
-pygfx = ["pygfx", "PySide6"]
-viz = ["app-model", "superqt"]
+napari = ["napari[pyqt6,optional]"]
+cellier = ["cellier[pyqt]>0.0.6",]
+viz = ["app-model"]
+torch = ["torch", "morphospaces>=0.0.5"]
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
 # add anything else you like to have in your dev environment here
@@ -75,6 +76,10 @@ docs = [
     "mkdocs-literate-nav",
     "mkdocs-gen-files",
     "mkdocs-section-index"
+]
+# all dev dependencies
+dev-all = [
+    "skeleplex-v2[napari,test,viz,cellier,docs,dev]"
 ]
 
 [project.urls]

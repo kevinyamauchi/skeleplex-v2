@@ -257,7 +257,6 @@ def filter_file_for_iterative_lumens(args):
     with h5py.File(output_file_path, "w") as f:
         f.create_dataset("image", data=image_slice_filt)
         f.create_dataset("segmentation", data=label_slices_filt)
-
     logger.info(f"Filtered and saved {file}")
 
 

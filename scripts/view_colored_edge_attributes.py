@@ -335,7 +335,7 @@ class ChangeBranchColorWidget(QWidget):
             vmin=min_val,
             vmax=max_val,
         )
-        self.update_colorbar(self.current_attr, min_val, max_val)
+        self._update_colorbar(self.current_attr, min_val, max_val)
 
 
 if __name__ == "__main__":

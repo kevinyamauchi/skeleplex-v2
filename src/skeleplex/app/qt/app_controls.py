@@ -5,6 +5,7 @@ from pathlib import Path
 from magicgui import magicgui
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QDockWidget,
@@ -17,7 +18,11 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from skeleplex.app._data import SkeletonDataPaths
+from skeleplex.app._data import (
+    EdgeSelectionPasteRequest,
+    NodeSelectionPasteRequest,
+    SkeletonDataPaths,
+)
 from skeleplex.app.qt.flat_group_box import FlatHGroupBox, FlatVGroupBox
 from skeleplex.app.qt.styles import (
     DOCK_WIDGET_STYLE,
@@ -121,6 +126,49 @@ class DataSelectorWidget(FlatHGroupBox):
             self.edge_mode_box.selection_box.setText("")
         else:
             self.edge_mode_box.selection_box.setText(str(event))
+
+    def _on_node_selection_change(self, event):
+        """Update the GUI when the selected nodes change."""
+        if len(event) == 0:
+            self.node_mode_box.selection_box.setText("")
+        else:
+            self.node_mode_box.selection_box.setText(str(event))
+
+    def _on_edge_paste_request(self, paste_request: EdgeSelectionPasteRequest):
+        """Handle a request to paste edge selection data.
+
+        This pastes the edges from the paste request into the currently
+        selected widget if the widget is a LineEdit.
+        """
+        if not isinstance(paste_request, EdgeSelectionPasteRequest):
+            # if not a paste request, do nothing
+            return
+
+        selected_widget = QApplication.focusWidget()
+        if not isinstance(selected_widget, QLineEdit):
+            # if the selected widget isn't a QLineEdit, do nothing
+            return
+
+        # paste the text
+        selected_widget.setText(str(paste_request.edge_keys))
+
+    def _on_node_paste_request(self, paste_request: NodeSelectionPasteRequest):
+        """Handle a request to paste node selection data.
+
+        This pastes the nodes from the paste request into the currently
+        selected widget if the widget is a LineEdit.
+        """
+        if not isinstance(paste_request, NodeSelectionPasteRequest):
+            # if not a paste request, do nothing
+            return
+
+        selected_widget = QApplication.focusWidget()
+        if not isinstance(selected_widget, QLineEdit):
+            # if the selected widget isn't a QLineEdit, do nothing
+            return
+
+        # paste the text
+        selected_widget.setText(str(paste_request.node_keys))
 
 
 class AppControlsWidget(QWidget):

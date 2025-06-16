@@ -230,9 +230,9 @@ def compute_rotation_angle(graph: nx.DiGraph):
         if not parent_sister:
             continue
 
-        if isinstance(parent_sister[0], list):
+        if not isinstance(parent_sister[0], int):
             parent_sister = tuple(parent_sister[0])
-        if isinstance(sister[0], list):
+        if not isinstance(sister[0], int):
             sister = tuple(sister[0])
 
         parent_plane = [
@@ -291,7 +291,7 @@ def compute_sibling_angle(graph: nx.DiGraph):
     # keep only one sister pair as they both have the same angle
     unique_pairs = set()
     for pair in sister_pairs:
-        if isinstance(pair[0][0], list) or isinstance(pair[1][0], list):
+        if not isinstance(pair[0][0], int) or not isinstance(pair[1][0], int):
             continue
         pair = tuple(sorted(pair))
         unique_pairs.add(pair)
@@ -363,11 +363,16 @@ def compute_surface_normals_and_angles(
         surface_dict = {}
         for lobe in lobes:
             logger.info(f"Processing lobe {lobe}")
-            normal_dict, _, surface = fit_surface_and_get_surface_normal_of_branches(
-                graph, lobe, smooth=smooth
+            (normal_dict, distance_to_surface, surface) = (
+                fit_surface_and_get_surface_normal_of_branches(
+                    graph, lobe, smooth=smooth
+                )
             )
             dict_normal_dicts[lobe] = normal_dict
             surface_dict[lobe] = surface
+            nx.set_edge_attributes(
+                skeleton.graph, distance_to_surface, "distance_to_lobe_section"
+            )
 
         surface_stage_dict[stage_list[i]] = surface_dict
 

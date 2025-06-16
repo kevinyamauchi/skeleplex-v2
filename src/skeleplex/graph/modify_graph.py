@@ -126,8 +126,8 @@ def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
         if key == GENERATION_KEY:
             merge_attributes[key] = edge_attributes1[key]
 
-        if key == LENGTH_KEY:
-            merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
+        # if key == LENGTH_KEY:
+        #     merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
 
         if key not in [
             VALIDATION_KEY,

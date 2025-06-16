@@ -29,8 +29,10 @@ class RenderedSkeletonComponents:
     These data are used for accessing the rendered skeleton in the viewer backend.
     """
 
-    nodes_store: PointsMemoryStore | None = None
-    nodes_visual: PointsVisual | None = None
+    node_store: PointsMemoryStore | None = None
+    node_visual: PointsVisual | None = None
+    node_highlight_store: PointsMemoryStore | None = None
+    node_highlight_visual: PointsVisual | None = None
     edges_store: LinesMemoryStore | None = None
     edges_visual: LinesVisual | None = None
     edge_highlight_store: LinesMemoryStore | None = None
@@ -40,8 +42,10 @@ class RenderedSkeletonComponents:
         """Returns True if all the components are populated."""
         return all(
             [
-                self.nodes_store is not None,
-                self.nodes_visual is not None,
+                self.node_store is not None,
+                self.node_visual is not None,
+                self.node_highlight_store is not None,
+                self.node_highlight_visual is not None,
                 self.edges_store is not None,
                 self.edges_visual is not None,
                 self.edge_highlight_store is not None,
@@ -70,72 +74,107 @@ class MainCanvasController:
     ):
         """Update the geometry of the skeleton in the viewer."""
         # make the highlight lines store
-        edge_highlight_store = LinesMemoryStore(coordinates=np.empty((0, 3)))
+        if self._skeleton.edge_highlight_store is None:
+            # if the highlight store is not populated, create it
+            self._skeleton.edge_highlight_store = LinesMemoryStore(
+                coordinates=np.empty((0, 3))
+            )
+            self._backend.add_data_store(data_store=self._skeleton.edge_highlight_store)
 
-        # make the highlight lines material
-        edge_highlight_material_3d = LinesUniformMaterial(
-            color=(1, 0, 1, 1), size=3, size_coordinate_space="data", opacity=1.0
-        )
+        if self._skeleton.edge_highlight_visual is None:
+            # if the highlight visual is not populated, create it
+            edge_highlight_material_3d = LinesUniformMaterial(
+                color=(1, 0, 1, 1), size=6, size_coordinate_space="data", opacity=1.0
+            )
 
-        # make the highlight lines model
-        edge_highlight_visual = LinesVisual(
-            name="edge_highlight",
-            data_store_id=edge_highlight_store.id,
-            material=edge_highlight_material_3d,
-            pick_write=True,
-        )
+            # make the highlight lines model
+            edge_highlight_visual = LinesVisual(
+                name="edge_highlight",
+                data_store_id=self._skeleton.edge_highlight_store.id,
+                material=edge_highlight_material_3d,
+                pick_write=True,
+            )
+            self._skeleton.edge_highlight_visual = edge_highlight_visual
 
-        self._backend.add_data_store(data_store=edge_highlight_store)
-        self._backend.add_visual(
-            visual_model=edge_highlight_visual, scene_id=self.scene_id
-        )
+            # add the visual model to the viewer
+            self._backend.add_visual(
+                visual_model=edge_highlight_visual, scene_id=self.scene_id
+            )
 
-        # make the lines store
-        edge_lines_store = LinesMemoryStore(coordinates=edge_coordinates)
+        # update the lines store
+        if self._skeleton.edges_store is None:
+            self._skeleton.edges_store = LinesMemoryStore(coordinates=edge_coordinates)
+            self._backend.add_data_store(data_store=self._skeleton.edges_store)
+        else:
+            self._skeleton.edges_store.coordinates = edge_coordinates.astype(np.float32)
 
-        # make the lines material
-        edge_lines_material_3d = LinesUniformMaterial(
-            color=(0, 0, 1, 1), size=2, size_coordinate_space="data"
-        )
+        if self._skeleton.edges_visual is None:
+            # if the lines visual is not populated, create it
+            edge_lines_material_3d = LinesUniformMaterial(
+                color=(0, 0, 1, 1), size=2, size_coordinate_space="data"
+            )
 
-        # make the lines model
-        edge_lines_visual = LinesVisual(
-            name="edge_lines",
-            data_store_id=edge_lines_store.id,
-            material=edge_lines_material_3d,
-        )
+            # make the lines model
+            edge_lines_visual = LinesVisual(
+                name="edge_lines",
+                data_store_id=self._skeleton.edges_store.id,
+                material=edge_lines_material_3d,
+            )
+            self._skeleton.edges_visual = edge_lines_visual
+            self._backend.add_visual(
+                visual_model=edge_lines_visual, scene_id=self.scene_id
+            )
 
-        self._backend.add_data_store(data_store=edge_lines_store)
-        self._backend.add_visual(visual_model=edge_lines_visual, scene_id=self.scene_id)
+        if self._skeleton.node_highlight_store is None:
+            # make the highlight points store if it is not already created
+            self._skeleton.node_highlight_store = PointsMemoryStore(
+                coordinates=np.empty((0, 3), dtype=np.float32)
+            )
+            self._backend.add_data_store(data_store=self._skeleton.node_highlight_store)
 
-        # make the points store
-        points_store = PointsMemoryStore(coordinates=node_coordinates)
+        if self._skeleton.node_highlight_visual is None:
+            # make the highlight points material
+            highlight_points_material_3d = PointsUniformMaterial(
+                size=20, color=(0, 1, 0, 1), size_coordinate_space="data"
+            )
 
-        # make the points material
-        points_material_3d = PointsUniformMaterial(
-            size=3, color=(0, 0, 0, 1), size_coordinate_space="data"
-        )
+            # make the highlight points model
+            highlight_points_visual_3d = PointsVisual(
+                name="node_highlight_points",
+                data_store_id=self._skeleton.node_highlight_store.id,
+                material=highlight_points_material_3d,
+            )
+            self._skeleton.node_highlight_visual = highlight_points_visual_3d
 
-        # make the points model
-        points_visual_3d = PointsVisual(
-            name="node_points",
-            data_store_id=points_store.id,
-            material=points_material_3d,
-        )
+            # add the highlights to the viewer
+            self._backend.add_visual(
+                visual_model=highlight_points_visual_3d, scene_id=self.scene_id
+            )
 
-        # add the points to the viewer
-        self._backend.add_data_store(data_store=points_store)
-        self._backend.add_visual(visual_model=points_visual_3d, scene_id=self.scene_id)
+        if self._skeleton.node_store is None:
+            # make the points store if it is not already created
+            self._skeleton.node_store = PointsMemoryStore(coordinates=node_coordinates)
+            self._backend.add_data_store(data_store=self._skeleton.node_store)
+        else:
+            # update the points store with the new coordinates
+            self._skeleton.node_store.coordinates = node_coordinates.astype(np.float32)
 
-        # store the rendered skeleton components
-        self._skeleton = RenderedSkeletonComponents(
-            nodes_store=points_store,
-            nodes_visual=points_visual_3d,
-            edges_store=edge_lines_store,
-            edges_visual=edge_lines_visual,
-            edge_highlight_store=edge_highlight_store,
-            edge_highlight_visual=edge_highlight_visual,
-        )
+        if self._skeleton.node_visual is None:
+            # make the points material
+            points_material_3d = PointsUniformMaterial(
+                size=8, color=(0, 0, 0, 1), size_coordinate_space="data"
+            )
+
+            # make the points model
+            points_visual_3d = PointsVisual(
+                name="node_points",
+                data_store_id=self._skeleton.node_store.id,
+                material=points_material_3d,
+            )
+            self._skeleton.node_visual = points_visual_3d
+            self._backend.add_visual(
+                visual_model=points_visual_3d, scene_id=self.scene_id
+            )
 
         # reslice the scene
         self._backend.reslice_scene(scene_id=self.scene_id)
@@ -151,7 +190,7 @@ class MainCanvasController:
             return
 
         self._backend.look_at_visual(
-            visual_id=self._skeleton.nodes_visual.id,
+            visual_id=self._skeleton.node_visual.id,
             view_direction=view_direction,
             up=up,
         )
@@ -172,6 +211,26 @@ class MainCanvasController:
             return
 
         self._skeleton.edge_highlight_store.coordinates = edge_coordinates.astype(
+            np.float32
+        )
+        self._backend.reslice_scene(scene_id=self.scene_id)
+
+    def set_node_highlight(
+        self,
+        node_coordinates: np.ndarray,
+    ) -> None:
+        """Set the node highlight coordinates.
+
+        Parameters
+        ----------
+        node_coordinates : np.ndarray
+            The coordinates of the node to highlight.
+        """
+        if not self._skeleton.populated():
+            # don't do anything if the skeleton is not rendered
+            return
+
+        self._skeleton.node_highlight_store.coordinates = node_coordinates.astype(
             np.float32
         )
         self._backend.reslice_scene(scene_id=self.scene_id)
@@ -204,11 +263,6 @@ class MainCanvasController:
             visual_id=self._skeleton.edges_visual.id,
             callback=partial(callback, click_source="data"),
         )
-        # self._backend.add_visual_callback(
-        #     visual_id=self._skeleton.edges_visual.id,
-        #     callback=partial(callback, click_source="data"),
-        #     callback_type=callback_type,
-        # )
 
         # add for the highlight visual
         if (
@@ -223,15 +277,8 @@ class MainCanvasController:
             visual_id=self._skeleton.edge_highlight_visual.id,
             callback=partial(callback, click_source="highlight"),
         )
-        # self._backend.add_visual_callback(
-        #     visual_id=self._skeleton.edge_highlight_visual.id,
-        #     callback=partial(callback, click_source="highlight"),
-        #     callback_type=callback_type,
-        # )
 
-    def add_skeleton_node_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
-    ):
+    def add_skeleton_node_callback(self, callback: Callable):
         """Add a callback to the skeleton node visual.
 
         Parameters
@@ -245,11 +292,33 @@ class MainCanvasController:
             # don't do anything if the skeleton is not rendered
             return
 
-        self._backend.add_visual_callback(
-            visual_id=self._skeleton.nodes_visual_visual.id,
-            callback=callback,
-            callback_type=callback_type,
+        # add for the data visual
+        if (
+            self._skeleton.node_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.node_visual.id
+            )
+        self._backend.events.mouse.subscribe_to_visual(
+            visual_id=self._skeleton.node_visual.id,
+            callback=partial(callback, click_source="data"),
         )
+
+        # add for the highlight visual
+        if (
+            self._skeleton.node_highlight_visual.id
+            not in self._backend.events.mouse.visual_signals
+        ):
+            # if the visual isn't registered, register it
+            self._backend.events.mouse.register_visual(
+                visual_id=self._skeleton.node_highlight_visual.id
+            )
+            self._backend.events.mouse.subscribe_to_visual(
+                visual_id=self._skeleton.node_highlight_visual.id,
+                callback=partial(callback, click_source="highlight"),
+            )
 
     def remove_skeleton_edge_callback(self, callback: Callable):
         """Remove a callback from the skeleton edge visual.
@@ -270,9 +339,7 @@ class MainCanvasController:
             callback=callback,
         )
 
-    def remove_skeleton_nodes_callback(
-        self, callback: Callable, callback_type: tuple[str, ...]
-    ):
+    def remove_skeleton_node_callback(self, callback: Callable):
         """Remove a callback from the skeleton node visual.
 
         Parameters
@@ -287,9 +354,8 @@ class MainCanvasController:
             return
 
         self._backend.remove_visual_callback(
-            visual_id=self._skeleton.nodes_visual.id,
+            visual_id=self._skeleton.node_visual.id,
             callback=callback,
-            callback_type=callback_type,
         )
 
 
@@ -308,6 +374,6 @@ class ViewerController:
         )
 
     @property
-    def main_canvas(self):
+    def main_canvas(self) -> MainCanvasController:
         """Get the controller for the main canvas."""
         return self._main_canvas
