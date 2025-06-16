@@ -15,12 +15,15 @@ class MainViewerFrame(QFrame):
 
         self.setStyleSheet("border: 1px solid black;")
 
+        self.canvas_widget = canvas_widget
+        self.canvas_widget.setParent(self)
+
         # set the minimum height
         self.setMinimumHeight(self.MINIMUM_HEIGHT)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(canvas_widget)
+        layout.addWidget(self.canvas_widget)
         self.setLayout(layout)
 
 
