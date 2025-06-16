@@ -197,7 +197,7 @@ class DataView:
     def mode(self, mode: ViewMode | str) -> None:
         """Set the current view mode."""
         if not isinstance(mode, ViewMode):
-            mode = ViewMode(mode)
+            mode = ViewMode(mode.lower())
 
         if mode == ViewMode.BOUNDING_BOX and not self.bounding_box.is_populated:
             raise ValueError(
