@@ -11,6 +11,7 @@ from pydantic.types import FilePath
 
 from skeleplex.graph import SkeletonGraph
 from skeleplex.graph.constants import NODE_COORDINATE_KEY
+from skeleplex.utils import line_segments_in_aabb, points_in_aabb
 from skeleplex.visualize.spline import line_segment_coordinates_from_spline
 
 log = logging.getLogger(__name__)
@@ -51,10 +52,111 @@ class ViewMode(Enum):
     NODE = "node"
 
 
+class BoundingBoxEvents(SignalGroup):
+    """Events for the DataManager class."""
+
+    data = Signal()
+
+
+class BoundingBoxData:
+    """The current bounding box parameters."""
+
+    events = BoundingBoxEvents()
+
+    def __init__(
+        self,
+        min_coordinate: np.ndarray | None = None,
+        max_coordinate: np.ndarray | None = None,
+    ):
+        self._min_coordinate = min_coordinate
+        self._max_coordinate = max_coordinate
+
+    @property
+    def min_coordinate(self) -> np.ndarray | None:
+        """Returns the minimum corner of the bounding box."""
+        return self._min_coordinate
+
+    @min_coordinate.setter
+    def min_coordinate(self, min_coordinate: np.ndarray | None):
+        """Set the minimum coordinate of the bounding box to be rendered.
+
+        Parameters
+        ----------
+        min_coordinate : np.ndarray | None
+            The minimum coordinate of the axis-aligned bounding box.
+            If None, no corner is set. The bounding box rendering mode
+            requires min_coordinate to be set.
+        """
+        self._min_coordinate = np.asarray(min_coordinate)
+        self.events.data.emit()
+
+    @property
+    def max_coordinate(self) -> np.ndarray | None:
+        """Returns the minimum corner of the bounding box."""
+        return self._max_coordinate
+
+    @max_coordinate.setter
+    def max_coordinate(self, max_coordinate: np.ndarray | None):
+        """Set the maximum coordinate of the bounding box to be rendered.
+
+        Parameters
+        ----------
+        max_coordinate : np.ndarray | None
+            The maximum coordinate of the axis-aligned bounding box.
+            If None, no corner is set. The bounding box rendering mode
+            requires max_coordinate to be set.
+        """
+        self._max_coordinate = np.asarray(max_coordinate)
+        self.events.data.emit()
+
+    @property
+    def is_populated(self) -> bool:
+        """Returns True if the min and max coordinate have been set."""
+        return (self.min_coordinate is not None) and (self.max_coordinate is not None)
+
+
+@dataclass(frozen=True)
+class ViewRequest:
+    """Base Request to view data in the skeleton graph.
+
+    Do not use this class directly, use one of the subclasses instead.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class AllViewRequest(ViewRequest):
+    """Request to view all data in the skeleton graph.
+
+    This is used for passing requests to view all data in the skeleton graph.
+    It does not require any parameters.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class BoundingBoxViewRequest(ViewRequest):
+    """Request to view an axis-aligned bounding box region.
+
+    Parameters
+    ----------
+    minimum : np.ndarray
+        The minimum corner of the axis-aligned bounding box.
+    maximum : np.ndarray
+        The maximum corner of the axis-aligned bounding box.
+    """
+
+    minimum: np.ndarray
+    maximum: np.ndarray
+
+
 class ViewEvents(SignalGroup):
     """Events for the DataManager class."""
 
     data = Signal()
+    mode = Signal()
 
 
 class DataView:
@@ -63,9 +165,13 @@ class DataView:
     events = ViewEvents()
 
     def __init__(
-        self, data_manager: "DataManager", mode: ViewMode = ViewMode.ALL
+        self,
+        data_manager: "DataManager",
+        bounding_box: BoundingBoxData,
+        mode: ViewMode = ViewMode.ALL,
     ) -> None:
         self._data_manager = data_manager
+        self._bounding_box = bounding_box
         self._mode = mode
 
         # initialize the data
@@ -78,6 +184,11 @@ class DataView:
         self._highlighted_node_keys: np.ndarray | None = None
 
     @property
+    def bounding_box(self) -> BoundingBoxData:
+        """Get the current bounding box data."""
+        return self._bounding_box
+
+    @property
     def mode(self) -> ViewMode:
         """Get the current view mode."""
         return self._mode
@@ -86,7 +197,12 @@ class DataView:
     def mode(self, mode: ViewMode | str) -> None:
         """Set the current view mode."""
         if not isinstance(mode, ViewMode):
-            mode = ViewMode(mode)
+            mode = ViewMode(mode.lower())
+
+        if mode == ViewMode.BOUNDING_BOX and not self.bounding_box.is_populated:
+            raise ValueError(
+                "The bounding box must be populated to set bounding box mode."
+            )
         self._mode = mode
         self.update()
 
@@ -147,6 +263,38 @@ class DataView:
         """
         return self._highlighted_edge_keys
 
+    def update(self) -> None:
+        """Update the data for the currently specified view.
+
+        This updates the edge coordinates, edge indices, and node indices.
+        """
+        if self._data_manager.skeleton_graph is None:
+            # if the data isn't loaded, nothing to update
+            return
+        if self._mode == ViewMode.ALL:
+            (
+                self._node_coordinates,
+                self._node_keys,
+                self._edge_coordinates,
+                self._edge_indices,
+                self._edge_keys,
+            ) = self._get_view_all()
+            self._highlighted_edge_keys = np.empty((0, 2))
+        elif self._mode == ViewMode.BOUNDING_BOX:
+            (
+                self._node_coordinates,
+                self._node_keys,
+                self._edge_coordinates,
+                self._edge_indices,
+                self._edge_keys,
+            ) = self._get_view_bounding_box()
+            self._highlighted_edge_keys = np.empty((0, 2))
+        else:
+            raise NotImplementedError(f"View mode {self._mode} not implemented.")
+
+        # Emit signal that the view data has been updated
+        self.events.data.emit()
+
     def _get_view_all(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -176,28 +324,79 @@ class DataView:
             self._data_manager.edge_keys,
         )
 
-    def update(self) -> None:
-        """Update the data for the currently specified view.
+    def _get_view_bounding_box(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Get the view for the current bounding box.
 
-        This updates the edge coordinates, edge indices, and node indices.
+        Returns
+        -------
+        node_coordinates : np.ndarray
+            (n_nodes,3) array of the coordinates of
+            the rendered nodes in the skeleton graph.
+        node_keys : np.ndarray
+            (n_nodes) array of the keys of the nodes in the skeleton graph.
+        edge_coordinates : np.ndarray
+            (n_edges x 2 x n_points_per_edge, 3) array of the coordinates of
+            the rendered edges in the skeleton graph.
+        edge_indices : np.ndarray
+            The indices of the edges in the skeleton graph.
+        edge_keys : np.ndarray
+            The keys of the edge for each edge coordinate in the skeleton graph.
+
         """
-        if self._data_manager.skeleton_graph is None:
-            # if the data isn't loaded, nothing to update
-            return
-        if self._mode == ViewMode.ALL:
-            (
-                self._node_coordinates,
-                self._node_keys,
-                self._edge_coordinates,
-                self._edge_indices,
-                self._edge_keys,
-            ) = self._get_view_all()
-            self._highlighted_edge_keys = np.empty((0, 2))
-        else:
-            raise NotImplementedError(f"View mode {self._mode} not implemented.")
+        if not self.bounding_box.is_populated:
+            raise ValueError(
+                "DataView.bounding_box must be set to use bounding box mode."
+            )
 
-        # Emit signal that the view data has been updated
-        self.events.data.emit()
+        # get the vertices in the bounding box
+        nodes_inside = points_in_aabb(
+            coordinates=self._data_manager.node_coordinates,
+            min_bounds=self.bounding_box.min_coordinate,
+            max_bounds=self.bounding_box.max_coordinate,
+        )
+        node_coordinates = self._data_manager.node_coordinates[nodes_inside]
+        node_keys = self._data_manager.node_keys[nodes_inside]
+
+        # get the edges in the bounding box
+        edges_inside = line_segments_in_aabb(
+            line_segments=self._data_manager.edge_coordinates,
+            min_bounds=self.bounding_box.min_coordinate,
+            max_bounds=self.bounding_box.max_coordinate,
+        )
+        edge_coordinates = self._data_manager.edge_coordinates[edges_inside]
+        edge_indices = self._data_manager.edge_indices[edges_inside]
+        edge_keys = self._data_manager.edge_keys[edges_inside]
+
+        return (
+            node_coordinates,
+            node_keys,
+            edge_coordinates,
+            edge_indices,
+            edge_keys,
+        )
+
+    def _on_view_request(self, request: BoundingBoxViewRequest):
+        """Handle a request to change the view.
+
+        This updates the bounding box and view mode based on the request.
+        This is generally called by the GUI widget events.
+        """
+        if isinstance(request, AllViewRequest):
+            self.mode = ViewMode.ALL
+
+        elif isinstance(request, BoundingBoxViewRequest):
+            # set the bounding box coordinates
+            # use the private attribute to prevent the event from being emitted.
+            self.bounding_box._min_coordinate = request.minimum
+            self.bounding_box._max_coordinate = request.maximum
+
+            # set the view mode to bounding box
+            self.mode = ViewMode.BOUNDING_BOX
+
+        else:
+            raise TypeError(f"Unknown view request type: {type(request)}.")
 
 
 class EdgeSelectionManager(EventedModel):
@@ -345,7 +544,9 @@ class DataManager:
     ) -> None:
         self._file_paths = file_paths
 
-        self._view = DataView(data_manager=self, mode=ViewMode.ALL)
+        self._view = DataView(
+            data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
+        )
 
         # make the selection model
         if selection is None:
