@@ -55,7 +55,7 @@ dependencies = [
 [project.optional-dependencies]
 # for visualization
 napari = ["napari[pyqt6,optional]"]
-cellier = ["cellier[pyqt]>0.0.6",]
+cellier = ["cellier[pyqt]>0.0.7",]
 viz = ["app-model"]
 torch = ["torch", "morphospaces>=0.0.5"]
 # add dependencies used for testing here
