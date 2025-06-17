@@ -57,6 +57,7 @@ class SkelePlexApp(Application):
             # add the canvas widgets
             print(f"Adding canvas widget: {canvas}")
             self._main_window._set_main_viewer_widget(canvas)
+            self._main_window.updateGeometry()
 
         # connect the data events
         self._connect_data_events()

@@ -9,9 +9,9 @@ import numpy as np
 from cellier.models.data_stores.lines import LinesMemoryStore
 from cellier.models.data_stores.points import PointsMemoryStore
 from cellier.models.visuals import (
-    LinesUniformMaterial,
+    LinesUniformAppearance,
     LinesVisual,
-    PointsUniformMaterial,
+    PointsUniformAppearance,
     PointsVisual,
 )
 from cellier.viewer_controller import CellierController
@@ -83,7 +83,7 @@ class MainCanvasController:
 
         if self._skeleton.edge_highlight_visual is None:
             # if the highlight visual is not populated, create it
-            edge_highlight_material_3d = LinesUniformMaterial(
+            edge_highlight_material_3d = LinesUniformAppearance(
                 color=(1, 0, 1, 1), size=6, size_coordinate_space="data", opacity=1.0
             )
 
@@ -91,7 +91,7 @@ class MainCanvasController:
             edge_highlight_visual = LinesVisual(
                 name="edge_highlight",
                 data_store_id=self._skeleton.edge_highlight_store.id,
-                material=edge_highlight_material_3d,
+                appearance=edge_highlight_material_3d,
                 pick_write=True,
             )
             self._skeleton.edge_highlight_visual = edge_highlight_visual
@@ -110,7 +110,7 @@ class MainCanvasController:
 
         if self._skeleton.edges_visual is None:
             # if the lines visual is not populated, create it
-            edge_lines_material_3d = LinesUniformMaterial(
+            edge_lines_material_3d = LinesUniformAppearance(
                 color=(0, 0, 1, 1), size=2, size_coordinate_space="data"
             )
 
@@ -118,7 +118,7 @@ class MainCanvasController:
             edge_lines_visual = LinesVisual(
                 name="edge_lines",
                 data_store_id=self._skeleton.edges_store.id,
-                material=edge_lines_material_3d,
+                appearance=edge_lines_material_3d,
             )
             self._skeleton.edges_visual = edge_lines_visual
             self._backend.add_visual(
@@ -134,7 +134,7 @@ class MainCanvasController:
 
         if self._skeleton.node_highlight_visual is None:
             # make the highlight points material
-            highlight_points_material_3d = PointsUniformMaterial(
+            highlight_points_material_3d = PointsUniformAppearance(
                 size=20, color=(0, 1, 0, 1), size_coordinate_space="data"
             )
 
@@ -142,7 +142,7 @@ class MainCanvasController:
             highlight_points_visual_3d = PointsVisual(
                 name="node_highlight_points",
                 data_store_id=self._skeleton.node_highlight_store.id,
-                material=highlight_points_material_3d,
+                appearance=highlight_points_material_3d,
             )
             self._skeleton.node_highlight_visual = highlight_points_visual_3d
 
@@ -161,7 +161,7 @@ class MainCanvasController:
 
         if self._skeleton.node_visual is None:
             # make the points material
-            points_material_3d = PointsUniformMaterial(
+            points_material_3d = PointsUniformAppearance(
                 size=8, color=(0, 0, 0, 1), size_coordinate_space="data"
             )
 
@@ -169,7 +169,7 @@ class MainCanvasController:
             points_visual_3d = PointsVisual(
                 name="node_points",
                 data_store_id=self._skeleton.node_store.id,
-                material=points_material_3d,
+                appearance=points_material_3d,
             )
             self._skeleton.node_visual = points_visual_3d
             self._backend.add_visual(

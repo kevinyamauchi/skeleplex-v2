@@ -4,7 +4,7 @@ from app_model import Application
 from app_model.backends.qt import QModelMainWindow
 from PyQt6.QtWidgets import QDockWidget
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QLabel, QStatusBar, QWidget
+from qtpy.QtWidgets import QStatusBar, QWidget
 
 from skeleplex.app.qt import AppControlsDock, AuxiliaryViews
 from skeleplex.app.qt.main_viewer import MainViewerWidget
@@ -37,9 +37,6 @@ class MainWindow(QModelMainWindow):
 
         # self.tool_bar = self.addModelToolBar(MenuId.FILE, exclude={CommandId.OPEN})
         # self.tool_bar.setStyleSheet("background: white;")
-
-        # set the central widget
-        self.setCentralWidget(QLabel("I'm the Central Widget"))
 
         # set the minimum window size - app will launch with this size.
         self.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
@@ -77,3 +74,4 @@ class MainWindow(QModelMainWindow):
         self.setCentralWidget(
             MainViewerWidget(canvas_widget=canvas_widget, parent=self)
         )
+        self.updateGeometry()
