@@ -36,10 +36,22 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
     - The graph must be ordered with the desired hierarchy
     - The graph must have a 'node_coordinate' attribute for each node
 
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph
+    # limit_to_90_degrees : bool
+    #     If True, the angle is limited to 90 degrees.
+    #     If False, the angle is not limited to 90 degrees.
+
     Returns
     -------
     graph : nx.DiGraph
         The input graph with the angles added as edge attributes
+    center_points : list
+        List of center points of the branches for visualization
+    midline_points : list
+        List of midline points of the branches for visualization
 
     Raises
     ------
@@ -93,8 +105,9 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
         angle = np.degrees(np.arccos(dot))
         # center around 90 degrees
         # angle = np.abs(angle -90)
-        if angle > 90:
-            angle = angle - 90
+        # if limit_to_90_degrees == True:
+        #     if angle > 90:
+        #         angle = angle - 90
 
         angle_dict[edge] = angle
 
@@ -108,7 +121,11 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
 
 
 def compute_midline_branch_angle_spline(
-    graph: nx.DiGraph, n_samples: int, approx=False
+    graph: nx.DiGraph,
+    n_samples: int,
+    sample_start: float = 0,
+    sample_end: float = 1,
+    approx=False,
 ):
     """Calculates the midline branch angle for each branch in the graph.
 
@@ -131,6 +148,10 @@ def compute_midline_branch_angle_spline(
         The input graph
     n_samples : int
         The number of samples to take along the spline
+    sample_start : float
+        The start position of the sample along the spline
+    sample_end : float
+        The end position of the sample along the spline
     approx : bool
         If True, evaluate the spline using an approximation
 
@@ -161,7 +182,7 @@ def compute_midline_branch_angle_spline(
         parent_edge = parent_edge[0]
         parent_spline = graph.edges[parent_edge][EDGE_SPLINE_KEY]
         spline = graph.edges[edge][EDGE_SPLINE_KEY]
-        sample_positions = np.linspace(0, 1, n_samples)
+        sample_positions = np.linspace(sample_start, sample_end, n_samples)
         parent_tangents = parent_spline.eval(
             sample_positions, derivative=1, approx=approx
         )

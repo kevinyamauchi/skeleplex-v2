@@ -126,8 +126,8 @@ def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
         if key == GENERATION_KEY:
             merge_attributes[key] = edge_attributes1[key]
 
-        # if key == LENGTH_KEY:
-        #     merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
+        if key == LENGTH_KEY:
+            merge_attributes[key] = merge_attributes[EDGE_SPLINE_KEY].arc_length
 
         if key not in [
             VALIDATION_KEY,
@@ -409,3 +409,50 @@ def move_branch_point_along_edge(
 
     # update graph
     skeleton_graph.graph = graph
+
+
+def connect_without_merging(skeleton_graph: SkeletonGraph, node1: int, node2: int):
+    """Connect two nodes without merging them.
+
+    A line is just drawn between the two nodes.
+
+    Parameters
+    ----------
+    skeleton_graph : SkeletonGraph
+        The skeleton graph object.
+    node1 : int
+        The first node to connect.
+    node2 : int
+        The second node to connect.
+
+    Returns
+    -------
+    SkeletonGraph
+        The modified skeleton graph with the new edge added.
+    """
+    # check if directed
+    if not skeleton_graph.graph.is_directed():
+        ValueError("Graph is not directed. Convert to directed graph.")
+    # copy graph
+    graph = skeleton_graph.graph.copy()
+    # check if nodes are already connected
+    if graph.has_edge(node1, node2):
+        logger.warning(f"Nodes {node1} and {node2} are already connected.")
+
+    u_coordinates = skeleton_graph.graph.nodes[node1][NODE_COORDINATE_KEY]
+    v_coordinates = skeleton_graph.graph.nodes[node2][NODE_COORDINATE_KEY]
+    path = np.linspace(u_coordinates, v_coordinates, num=20)
+    spline = B3Spline.from_points(path)
+
+    g = skeleton_graph.graph.copy()
+    g.add_edge(
+        node1,
+        node2,
+        EDGE_COORDINATES_KEY=path,
+        EDGE_SPLINE_KEY=spline,
+        START_NODE_KEY=node1,
+        END_NODE_KEY=node2,
+    )
+    skeleton_graph.graph = g
+
+    return skeleton_graph

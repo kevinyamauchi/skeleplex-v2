@@ -14,6 +14,7 @@ MIN_WINDOW_HEIGHT = 600
 
 MAIN_WINDOW_STYLE = """
 background-color: white;
+color: black;
 QMainWindow {
     background-color: white;
 }
