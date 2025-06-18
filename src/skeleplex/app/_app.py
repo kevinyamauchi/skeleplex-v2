@@ -39,25 +39,24 @@ class SkelePlexApp(Application):
         )
 
         # make the viewer model
-        self._viewer = ViewerController(parent_widget=None)
-        # self._viewer = ViewerController(parent_widget=self._main_window)
+        # self._viewer = ViewerController(parent_widget=None)
+
+        self._main_window = MainWindow(
+            app=self,
+        )
+        self._viewer = ViewerController(parent_widget=self._main_window)
 
         # ACTIONS is a list of Action objects.
         for action in ACTIONS:
             self.register_action(action)
         self._register_data_actions()
 
-        self._main_window = MainWindow(
-            app=self,
-        )
         # This will build a menu bar based on these menus
         self._main_window.setModelMenuBar([MenuId.FILE, MenuId.EDIT, MenuId.DATA])
 
         for canvas in self._viewer._backend._canvas_widgets.values():
             # add the canvas widgets
-            print(f"Adding canvas widget: {canvas}")
             self._main_window._set_main_viewer_widget(canvas)
-            self._main_window.updateGeometry()
 
         # connect the data events
         self._connect_data_events()
