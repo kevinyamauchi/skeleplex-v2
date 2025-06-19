@@ -15,7 +15,6 @@ from skeleplex.app._data import (
 )
 from skeleplex.app._viewer_controller import ViewerController
 from skeleplex.app.actions import ACTIONS
-from skeleplex.app.qt import MainWindow
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ class SkelePlexApp(Application):
         )
 
         # make the viewer model
-        self._viewer = ViewerController(parent_widget=None)
+        self._viewer = ViewerController()
         # self._viewer = ViewerController(parent_widget=self._main_window)
 
         # ACTIONS is a list of Action objects.
@@ -47,11 +46,13 @@ class SkelePlexApp(Application):
             self.register_action(action)
         self._register_data_actions()
 
-        self._main_window = MainWindow(
-            app=self,
-        )
         # This will build a menu bar based on these menus
         self._main_window.setModelMenuBar([MenuId.FILE, MenuId.EDIT, MenuId.DATA])
+
+        # populate the renderer
+        self._viewer._populate_viewer_from_model(
+            canvas_widget_parent=self._main_window._main_viewer_widget.main_viewer_frame
+        )
 
         for canvas in self._viewer._backend._canvas_widgets.values():
             # add the canvas widgets

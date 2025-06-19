@@ -15,7 +15,6 @@ from cellier.models.viewer import SceneManager, ViewerModel
 from cellier.slicer.slicer import SlicerType
 from cellier.types import CoordinateSpace
 from cellier.viewer_controller import CellierController
-from qtpy.QtWidgets import QWidget
 
 
 def make_viewer_model() -> tuple[ViewerModel, str]:
@@ -56,12 +55,10 @@ def make_viewer_model() -> tuple[ViewerModel, str]:
     return viewer_model, main_viewer_scene.id
 
 
-def make_viewer_controller(
-    viewer_model: ViewerModel, parent_widget: QWidget
-) -> CellierController:
+def make_viewer_controller(viewer_model: ViewerModel) -> CellierController:
     """Make the viewer controller."""
     return CellierController(
         model=viewer_model,
         slicer_type=SlicerType.ASYNCHRONOUS,
-        widget_parent=parent_widget,
+        populate_renderer=False,
     )

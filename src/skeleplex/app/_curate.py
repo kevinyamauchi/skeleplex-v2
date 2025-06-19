@@ -2,7 +2,11 @@ from collections import deque
 from copy import deepcopy
 from typing import TYPE_CHECKING, Annotated, Any
 
-from skeleplex.graph.modify_graph import delete_edge
+from skeleplex.graph.modify_graph import (
+    connect_without_merging,
+    delete_edge,
+    merge_nodes,
+)
 
 if TYPE_CHECKING:
     # prevent circular import
@@ -215,6 +219,97 @@ class CurationManager:
         for edge in edges:
             delete_edge(skeleton_graph=self._data.skeleton_graph, edge=edge)
 
+        if redraw:
+            # redraw the graph
+            self._update_and_request_redraw()
+
+    def connect_without_merging(
+        self,
+        start_node: Annotated[int, {"widget_type": "LineEdit"}],
+        end_node: Annotated[int, {"widget_type": "LineEdit"}],
+        redraw: bool = True,
+    ) -> None:
+        """Connect two nodes in the skeleton graph without merging them.
+
+        This method connects two nodes in the skeleton graph by creating an edge
+        between them. If the nodes are already connected, no action is taken.
+        The connection does not merge the nodes, preserving their individual identities.
+
+        Parameters
+        ----------
+        start_node : int
+            The ID of the first node to connect.
+        end_node : int
+            The ID of the second node to connect.
+        redraw : bool
+            Flag set to True to redraw the graph after connecting.
+            Defaults value is True.
+        """
+        start_node = node_string_to_node_keys(start_node)
+        end_node = node_string_to_node_keys(end_node)
+        start_node = next(iter(start_node), None)
+        end_node = next(iter(end_node), None)
+        if start_node is None or end_node is None:
+            # if either node is None, do nothing
+            return
+        if start_node == end_node:
+            # if both nodes are the same, do nothing
+            return
+
+        # store the previous state in the undo buffer
+        self._undo_buffer.push(deepcopy(self._data.skeleton_graph))
+
+        # connect the nodes without merging
+        connect_without_merging(
+            skeleton_graph=self._data.skeleton_graph, node1=start_node, node2=end_node
+        )
+
+        if redraw:
+            # redraw the graph
+            self._update_and_request_redraw()
+
+    def connect_with_merging(
+        self,
+        node_to_keep: Annotated[int, {"widget_type": "LineEdit"}],
+        node_to_merge: Annotated[int, {"widget_type": "LineEdit"}],
+        redraw: bool = True,
+    ) -> None:
+        """Connect two nodes in the skeleton graph by merging them.
+
+        This method connects two nodes in the skeleton graph by merging one node
+        into another. The node to keep will retain its identity, while the other
+        node will be merged into it, effectively removing it from the graph.
+
+        Parameters
+        ----------
+        node_to_keep : int
+            The ID of the nod e to keep after merging.
+        node_to_merge : int
+            The ID of the node to merge into the first node.
+        redraw : bool
+            Flag set to True to redraw the graph after connecting.
+            Defaults value is True.
+        """
+        node_to_keep = node_string_to_node_keys(node_to_keep)
+        node_to_merge = node_string_to_node_keys(node_to_merge)
+        node_to_keep = next(iter(node_to_keep), None)
+        node_to_merge = next(iter(node_to_merge), None)
+
+        if node_to_keep == node_to_merge:
+            # if both nodes are the same, do nothing
+            return
+
+        # store the previous state in the undo buffer
+        self._undo_buffer.push(deepcopy(self._data.skeleton_graph))
+
+        # merge the nodes in the skeleton graph
+        merge_nodes(
+            skeleton_graph=self._data.skeleton_graph,
+            node_to_keep=node_to_keep,
+            node_to_merge=node_to_merge,
+        )
+
+        # connect the nodes with merging
         if redraw:
             # redraw the graph
             self._update_and_request_redraw()

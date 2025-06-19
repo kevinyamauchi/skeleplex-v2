@@ -10,7 +10,7 @@ class MainViewerFrame(QFrame):
 
     MINIMUM_HEIGHT = 400
 
-    def __init__(self, canvas_widget: QWidget, parent: QWidget):
+    def __init__(self, parent: QWidget):
         super().__init__(parent=parent)
 
         self.setStyleSheet("border: 1px solid black;")
@@ -20,8 +20,17 @@ class MainViewerFrame(QFrame):
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(canvas_widget)
         self.setLayout(layout)
+
+    def addCanvasWidget(self, widget: QWidget):
+        """Add a canvas widget to the frame.
+
+        Parameters
+        ----------
+        widget : QWidget
+            The widget to add to the frame.
+        """
+        self.layout().addWidget(widget)
 
 
 class ImageControls(FlatVGroupBox):
@@ -68,11 +77,9 @@ class MainViewerControls(QWidget):
 class MainViewerWidget(QWidget):
     """A widget for the main viewer."""
 
-    def __init__(self, canvas_widget: QWidget, parent: QWidget):
+    def __init__(self, parent: QWidget):
         super().__init__(parent=parent)
-        self.main_viewer_frame = MainViewerFrame(
-            canvas_widget=canvas_widget, parent=self
-        )
+        self.main_viewer_frame = MainViewerFrame(parent=self)
         self.main_viewer_controls = MainViewerControls(parent=self)
 
         layout = QVBoxLayout()
@@ -80,3 +87,13 @@ class MainViewerWidget(QWidget):
         layout.addWidget(self.main_viewer_frame)
         layout.addWidget(self.main_viewer_controls)
         self.setLayout(layout)
+
+    def addCanvasWidget(self, widget: QWidget):
+        """Add a canvas widget to the main viewer frame.
+
+        Parameters
+        ----------
+        widget : QWidget
+            The widget to add to the main viewer frame.
+        """
+        self.main_viewer_frame.addCanvasWidget(widget)
