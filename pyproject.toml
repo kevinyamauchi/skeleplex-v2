@@ -87,7 +87,7 @@ docs = [
 ]
 # all dev dependencies
 dev-all = [
-    "skeleplex-v2[napari,test,viz,cellier,docs,dev]"
+    "skeleplex-v2[napari,test,viz,cellier,docs,dev, lumen_classifiers]",
 ]
 
 [project.urls]
