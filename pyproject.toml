@@ -70,15 +70,7 @@ dev = [
     "rich",  # https://github.com/Textualize/rich
     "ruff",
 ]
-#for resnet lumen classifiers
-lumen_classifiers = [
-    "napari[pyqt6,optional]",
-    "torch>=2.0.6",
-    "torchmetrics>=1.7.1",
-    "torchvision>=0.21.0",
-    "monai>=1.4.0",
-    "pytorch-lightning>=2.5.1",
-]
+
 # dependencies for docs
 docs = [
     "mkdocs-material",
