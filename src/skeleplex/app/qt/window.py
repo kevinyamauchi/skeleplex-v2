@@ -38,6 +38,9 @@ class MainWindow(QModelMainWindow):
         # self.tool_bar = self.addModelToolBar(MenuId.FILE, exclude={CommandId.OPEN})
         # self.tool_bar.setStyleSheet("background: white;")
 
+        self._main_viewer_widget = MainViewerWidget(parent=self)
+        self.setCentralWidget(self._main_viewer_widget)
+
         # set the minimum window size - app will launch with this size.
         self.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
@@ -71,7 +74,4 @@ class MainWindow(QModelMainWindow):
 
     def _set_main_viewer_widget(self, canvas_widget: QWidget):
         """Set the main viewer widget."""
-        self.setCentralWidget(
-            MainViewerWidget(canvas_widget=canvas_widget, parent=self)
-        )
-        self.updateGeometry()
+        self._main_viewer_widget.addCanvasWidget(canvas_widget)

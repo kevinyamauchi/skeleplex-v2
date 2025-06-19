@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING
 
 import numpy as np
 from cellier.models.data_stores.lines import LinesMemoryStore
@@ -17,9 +16,6 @@ from cellier.models.visuals import (
 from cellier.viewer_controller import CellierController
 
 from skeleplex.app.cellier.utils import make_viewer_controller, make_viewer_model
-
-if TYPE_CHECKING:
-    from qtpy.QtWidgets import QWidget
 
 
 @dataclass
@@ -362,11 +358,9 @@ class MainCanvasController:
 class ViewerController:
     """A class for controlling the viewer backend."""
 
-    def __init__(self, parent_widget: "QWidget"):
+    def __init__(self):
         viewer_model, main_canvas_scene_id = make_viewer_model()
-        self._backend = make_viewer_controller(
-            viewer_model=viewer_model, parent_widget=parent_widget
-        )
+        self._backend = make_viewer_controller(viewer_model=viewer_model)
 
         # make the main canvas controller
         self._main_canvas = MainCanvasController(
@@ -377,3 +371,10 @@ class ViewerController:
     def main_canvas(self) -> MainCanvasController:
         """Get the controller for the main canvas."""
         return self._main_canvas
+
+    def _populate_viewer_from_model(self, canvas_widget_parent):
+        self._backend.populate_from_viewer_model(
+            self._backend._model,
+            widget_parent=canvas_widget_parent,
+            overwrite_model=True,
+        )
