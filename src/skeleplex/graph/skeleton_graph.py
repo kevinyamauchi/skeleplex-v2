@@ -2,9 +2,14 @@
 
 import json
 import logging
+import os
 
+import dask
+import dask.array as da
 import networkx as nx
 import numpy as np
+from dask import delayed
+from dask.diagnostics import ProgressBar
 from splinebox import Spline as SplineboxSpline
 from splinebox.spline_curves import _prepared_dict_for_constructor
 
@@ -60,6 +65,21 @@ def skeleton_graph_decoder(json_object):
             return SplineboxSpline(**spline_kwargs)
         if json_object["__class__"] == "skeleplex.B3Spline":
             return B3Spline.from_json_dict(json_object)
+
+    # Convert lists back to numpy arrays
+    for key, value in json_object.items():
+        if isinstance(value, list):
+            if key in [NODE_COORDINATE_KEY, EDGE_COORDINATES_KEY]:
+                try:
+                    json_object[key] = np.array(value)
+                except Exception:
+                    pass  # If conversion fails, keep it as a list
+
+            if key in [SISTER_EDGE_KEY, DAUGHTER_EDGES_KEY, PARENT_EDGE_KEY]:
+                if key == DAUGHTER_EDGES_KEY:
+                    json_object[key] = [tuple(edge) for edge in value]
+                else:
+                    json_object[key] = tuple(value)
 
     # Convert lists back to numpy arrays
     for key, value in json_object.items():
@@ -209,6 +229,52 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     return graph
 
 
+def sample_slices_for_edge(
+    u,
+    v,
+    spline,
+    volume_path,
+    segmentation_path,
+    positions,
+    slice_size,
+    pixel_size,
+    interpolation_order,
+    image_voxel_size_um,
+    approx,
+):
+    """Helper function for parallel execution."""
+    logger.info(f"Sampling slices from edge ({u}, {v})")
+
+    volume = da.from_zarr(volume_path, chunks="auto")
+
+    image_slice = spline.sample_volume_2d(
+        volume,
+        positions,
+        grid_shape=(slice_size, slice_size),
+        grid_spacing=(pixel_size, pixel_size),
+        sample_interpolation_order=interpolation_order,
+        sample_fill_value=0,
+        image_voxel_size_um=image_voxel_size_um,
+        approx=approx,
+    )
+
+    segmentation_slice = None
+    if segmentation_path is not None:
+        segmentation = da.from_zarr(segmentation_path, chunks="auto")
+        segmentation_slice = spline.sample_volume_2d(
+            segmentation,
+            positions,
+            grid_shape=(slice_size, slice_size),
+            grid_spacing=(pixel_size, pixel_size),
+            sample_interpolation_order=0,
+            image_voxel_size_um=image_voxel_size_um,
+            sample_fill_value=0,
+            approx=approx,
+        )
+
+    return (u, v), image_slice, segmentation_slice
+
+
 class SkeletonGraph:
     """Data class for a skeleton graph.
 
@@ -216,6 +282,17 @@ class SkeletonGraph:
     ----------
     graph : nx.Graph
         The skeleton graph.
+    origin : int, optional
+        The origin node of the graph.
+    image_path : str, optional
+        The path to the image the graph was extracted from.
+    image_key : str, optional
+        The key of the image in the image file.
+    voxel_size_um : float, optional
+        The voxel size of the image in the image file.
+        We keep the graph scaled to um for easier handling.
+
+
     origin : int, optional
         The origin node of the graph.
     image_path : str, optional
@@ -240,6 +317,10 @@ class SkeletonGraph:
         voxel_size_um: float | None = None,
     ):
         self.graph = graph
+        self.origin = origin
+        self.image_path = image_path
+        self.image_key = image_key
+        self.voxel_size_um = voxel_size_um
         self.origin = origin
         self.image_path = image_path
         self.image_key = image_key
@@ -293,6 +374,16 @@ class SkeletonGraph:
     def to_json_file(self, file_path: str):
         """Return a JSON representation of the graph."""
         graph_dict = nx.node_link_data(self.graph, edges="edges")
+        # if one of the attributes is not None, add it to the dict
+        # if not add a placeholder
+
+        object_dict = {
+            "graph": graph_dict,
+            "origin": self.origin,
+            "image_path": self.image_path,
+            "image_key": self.image_key,
+            "voxel_size_um": self.voxel_size_um,
+        }
         # if one of the attributes is not None, add it to the dict
         # if not add a placeholder
 
@@ -357,6 +448,7 @@ class SkeletonGraph:
         """Return a SkeletonGraph from a networkx graph.
 
         The edges and nodes need to have an attribute with the specified keys
+        containing the coordinates of the nodes and edges as an np.ndarray.
         containing the coordinates of the nodes and edges as an np.ndarray.
         Requires edge coordinates of length greater than 4
         to successfully create a spline.
@@ -433,6 +525,7 @@ class SkeletonGraph:
         interpolation_order: int = 3,
         max_generation: int | None = None,
         segmentation: np.ndarray | None = None,
+        approx: bool = False,
     ):
         """Sample volume slices from the splines in the graph.
 
@@ -453,6 +546,9 @@ class SkeletonGraph:
         segmentation : np.ndarray | None
             The segmentation to sample slices from.
             If None, only the image is sampled.
+        approx : bool
+            If True, use the approximate spline evaluation.
+            If False, use the exact spline evaluation.
 
         Returns
         -------
@@ -498,6 +594,7 @@ class SkeletonGraph:
                 grid_spacing=(pixel_size, pixel_size),
                 sample_interpolation_order=interpolation_order,
                 image_voxel_size_um=image_voxel_size_um,
+                approx=approx,
             )
             image_slice_dict[(u, v)] = image_slice
 
@@ -509,6 +606,7 @@ class SkeletonGraph:
                     grid_spacing=(pixel_size, pixel_size),
                     sample_interpolation_order=0,
                     image_voxel_size_um=image_voxel_size_um,
+                    approx=approx,
                 )
                 segmentation_slice_dict[(u, v)] = segmentation_slice
 
@@ -516,3 +614,114 @@ class SkeletonGraph:
             return image_slice_dict, segmentation_slice_dict
         else:
             return image_slice_dict
+
+    def sample_volume_slices_from_spline_parallel(
+        self,
+        volume_path: da.Array,
+        slice_spacing: float,
+        slice_size: int,
+        interpolation_order: int = 3,
+        max_generation: int | None = None,
+        min_generation: int | None = None,
+        segmentation_path: da.Array | None = None,
+        approx: bool = False,
+    ):
+        """Sample volume slices from the splines in the graph in parallel.
+
+        Loads volume and segmentation data lazily and processes edges in parallel.
+
+        Parameters
+        ----------
+        volume_path : str
+            The volume path to sample slices from.
+            Must be path to a zarr file. Otherwise its not pickleable.
+        slice_spacing : float
+            The spacing between slices. Normalized between 0 and 1.
+        slice_size : int
+            The size of the slices in pixels.
+        interpolation_order : int
+            The order of the interpolation to use for the spline.
+            For labels use 0
+        max_generation : int
+            The maximum generation of the spline to sample.
+            If None, all levels are sampled.
+        min_generation : int
+            The minimum generation of the spline to sample.
+            If None, all levels are sampled.
+        segmentation_path : str | None
+            The segmentation path to sample slices from.
+            Must be path to a zarr file. Otherwise its not pickleable.
+            If None, only the image is sampled.
+        approx : bool
+            If True, use the approximate spline evaluation.
+            If False, use the exact spline evaluation.
+
+        """
+        image_voxel_size_um = self.voxel_size_um
+        origin = self.origin
+        if not origin:
+            raise ValueError("No origin node provided. Please set origin.")
+
+        if not image_voxel_size_um:
+            logger.warning("No voxel size provided. Assuming pixel size is 1 µm.")
+            image_voxel_size_um = (1, 1, 1)
+
+        graph = self.graph.copy()
+        generation_dict = nx.get_edge_attributes(graph, GENERATION_KEY)
+        spline_dict = nx.get_edge_attributes(graph, EDGE_SPLINE_KEY)
+
+        pixel_size = 1 / image_voxel_size_um[0]
+
+        # Prepare a list of edges to process
+        edges_to_process = [
+            (u, v)
+            for u, v in nx.breadth_first_search.bfs_edges(graph, source=origin)
+            if (max_generation is None or generation_dict[(u, v)] <= max_generation)
+            and (min_generation is None or generation_dict[(u, v)] > min_generation)
+        ]
+
+        # Define a function to process each edge,
+        # needs to be local to be pickable, required for laziness
+        def process_edge(edge):
+            u, v = edge
+            spline = spline_dict[(u, v)]
+            positions = np.linspace(0.1, 0.9, np.ceil(1 / slice_spacing).astype(int))
+            return sample_slices_for_edge(
+                u,
+                v,
+                spline,
+                volume_path,
+                segmentation_path,
+                positions,
+                slice_size,
+                pixel_size,
+                interpolation_order,
+                image_voxel_size_um,
+                approx,
+            )
+
+        # Use Dask delayed to process edges in parallel
+        tasks = [delayed(process_edge)(edge) for edge in edges_to_process]
+
+        # Compute all tasks in parallel
+        logger.info(f"Processing {len(tasks)} edges in parallel.")
+        with ProgressBar():
+            results = dask.compute(
+                *tasks, num_workers=os.cpu_count() - 2, scheduler="processes"
+            )
+
+        # Combine results into dictionaries
+        image_slice_dict = {}
+        segmentation_slice_dict = {}
+
+        for result in results:
+            (u, v), image_slice, segmentation_slice = result
+            image_slice_dict[(u, v)] = image_slice
+            if segmentation_path is not None:
+                segmentation_slice_dict[(u, v)] = segmentation_slice
+        if segmentation_path is not None:
+            return (
+                image_slice_dict,
+                segmentation_slice_dict,
+            )
+        return image_slice_dict
