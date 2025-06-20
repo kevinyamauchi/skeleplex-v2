@@ -36,7 +36,7 @@ def merge_edge(skeleton_graph: SkeletonGraph, n1: int, v1: int, n2: int):
 
     Parameters
     ----------
-    skeleton_graph : nx.DiGraph
+    skeleton_graph : SkeletonGraph
         The graph to merge the edges in.
     n1 : int
         The start node of the first edge.
@@ -203,27 +203,28 @@ def delete_edge(skeleton_graph: SkeletonGraph, edge: tuple[int, int]):
 
     # detect all changes
     changed_edges = set(skeleton_graph.graph.edges) - set(graph.edges)
+    skeleton_graph.graph = graph
     for edge in changed_edges:
         for node in edge:
-            if graph.degree(node) == 0:
-                graph.remove_node(node)
+            if skeleton_graph.graph.degree(node) == 0:
+                skeleton_graph.graph.remove_node(node)
             # merge edges if node has degree 2
-            elif graph.degree(node) == 2:
+            elif skeleton_graph.graph.degree(node) == 2:
                 # merge
-                in_edge = list(graph.in_edges(node))
-                out_edge = list(graph.out_edges(node))
+                in_edge = list(skeleton_graph.graph.in_edges(node))
+                out_edge = list(skeleton_graph.graph.out_edges(node))
                 if len(in_edge) == 0:
                     raise ValueError(
                         ("Deleting the edge would break the graph"),
                         "Are you trying to delete the origin?",
                     )
 
-                graph = merge_edge(graph, in_edge[0][0], node, out_edge[0][1])
+                merge_edge(skeleton_graph, in_edge[0][0], node, out_edge[0][1])
                 logger.info("merge")
 
     # check if graph is still connected, if not remove orphaned nodes
     skeleton_graph.graph.remove_nodes_from(list(nx.isolates(skeleton_graph.graph)))
-    skeleton_graph.graph = graph
+    # skeleton_graph.graph = graph
 
 
 def length_pruning(skeleton_graph: SkeletonGraph, length_threshold: int):
