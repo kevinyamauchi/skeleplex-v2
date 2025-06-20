@@ -1,5 +1,5 @@
 import numpy as np
-
+from copy import deepcopy
 from skeleplex.graph.constants import (
     NODE_COORDINATE_KEY,
 )
@@ -14,17 +14,17 @@ from skeleplex.graph.modify_graph import (
 
 def test_merge_edge(straight_edge_graph):
     """Test merging two edges."""
-
-    merged_graph = merge_edge(straight_edge_graph.graph, 0, 1, 2)
-    assert merged_graph.number_of_edges() == 1
-    assert list(merged_graph.nodes) == [0, 2]
+    merged_graph = deepcopy(straight_edge_graph)
+    merge_edge(merged_graph, 0, 1, 2)
+    assert merged_graph.graph.number_of_edges() == 1
+    assert list(merged_graph.graph.nodes) == [0, 2]
 
     # assert if all the edge attributes are copied
     original_attributes = set()
-    for _, _, attr in straight_edge_graph.edges(data=True):
+    for _, _, attr in straight_edge_graph.graph.edges(data=True):
         original_attributes.update(attr.keys())
     merged_attributes = set()
-    for _, _, attr in merged_graph.edges(data=True):
+    for _, _, attr in merged_graph.graph.edges(data=True):
         merged_attributes.update(attr.keys())
     assert original_attributes == merged_attributes
 

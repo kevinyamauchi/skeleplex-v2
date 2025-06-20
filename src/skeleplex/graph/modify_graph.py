@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
+def merge_edge(skeleton_graph: SkeletonGraph, n1: int, v1: int, n2: int):
     """Merge edges in graph and add edge attributes.
 
     n1 is merged with n2. v1 is removed.
@@ -36,7 +36,7 @@ def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
 
     Parameters
     ----------
-    graph : nx.DiGraph
+    skeleton_graph : SkeletonGraph
         The graph to merge the edges in.
     n1 : int
         The start node of the first edge.
@@ -46,29 +46,55 @@ def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
     n2 : int
         The end node of the second edge.
 
-    Returns
-    -------
-    nx.DiGraph
-        The graph with the merged edge.
-
-
 
     """
-    graph = graph.copy()
+    graph = skeleton_graph.graph.copy()
 
     start_node = graph.nodes(data=True)[n1][NODE_COORDINATE_KEY]
     end_node = graph.nodes(data=True)[n2][NODE_COORDINATE_KEY]
     middle_node = graph.nodes(data=True)[v1][NODE_COORDINATE_KEY]
 
-    edge1 = (start_node, middle_node)
-    edge2 = (middle_node, end_node)
+    if graph.degree(v1) != 2:
+        raise ValueError(
+            f"Node {v1} has degree {graph.degree(middle_node)}. "
+            "Only nodes with degree 2 can be merged."
+        )
 
-    edge_attributes1 = graph.get_edge_data(n1, v1)
-    edge_attributes2 = graph.get_edge_data(v1, n2)
-    graph.remove_edge(n1, v1)
-    graph.remove_edge(v1, n2)
-    graph.remove_node(v1)
-    merge_edge = (n1, n2)
+    # adapt for directed graphs
+    if graph.has_edge(n1, v1) and graph.has_edge(v1, n2):
+        edge1 = (n1, v1)
+        edge2 = (v1, n2)
+        merge_edge = (n1, n2)
+    # first flipped
+    elif graph.has_edge(v1, n2) and graph.has_edge(n1, v1):
+        edge1 = (v1, n2)
+        edge2 = (n1, v1)
+        merge_edge = (n2, n1)
+    # second flipped
+    elif graph.has_edge(n1, v1) and graph.has_edge(n2, v1):
+        edge1 = (n1, v1)
+        edge2 = (n2, v1)
+        merge_edge = (n1, n2)
+    # both flipped
+    elif graph.has_edge(v1, n2) and graph.has_edge(n2, v1):
+        edge1 = (v1, n2)
+        edge2 = (n2, v1)
+        merge_edge = (n1, n2)
+    else:
+        raise ValueError(
+            f"Edges {n1, v1} and {v1, n2} not found in graph. "
+            "Are you trying to merge nodes that are not connected?"
+        )
+
+    # edge1 = (start_node, middle_node)
+    # edge2 = (middle_node, end_node)
+
+    edge_attributes1 = graph.get_edge_data(edge1[0], edge1[1])
+    edge_attributes2 = graph.get_edge_data(edge2[0], edge2[1])
+    graph.remove_edge(edge1[0], edge1[1])
+    graph.remove_edge(edge2[0], edge2[1])
+    graph.remove_node(edge1[1])
+    # merge_edge = (edge1[0], edge2[1])
     merge_attributes = {}
     for key in edge_attributes1:
         if key == VALIDATION_KEY:
@@ -143,7 +169,7 @@ def merge_edge(graph: nx.DiGraph, n1: int, v1: int, n2: int):
             )
 
     graph.add_edge(*merge_edge, **merge_attributes)
-    return graph
+    skeleton_graph.graph = graph
 
 
 def delete_edge(skeleton_graph: SkeletonGraph, edge: tuple[int, int]):
@@ -177,27 +203,28 @@ def delete_edge(skeleton_graph: SkeletonGraph, edge: tuple[int, int]):
 
     # detect all changes
     changed_edges = set(skeleton_graph.graph.edges) - set(graph.edges)
+    skeleton_graph.graph = graph
     for edge in changed_edges:
         for node in edge:
-            if graph.degree(node) == 0:
-                graph.remove_node(node)
+            if skeleton_graph.graph.degree(node) == 0:
+                skeleton_graph.graph.remove_node(node)
             # merge edges if node has degree 2
-            elif graph.degree(node) == 2:
+            elif skeleton_graph.graph.degree(node) == 2:
                 # merge
-                in_edge = list(graph.in_edges(node))
-                out_edge = list(graph.out_edges(node))
+                in_edge = list(skeleton_graph.graph.in_edges(node))
+                out_edge = list(skeleton_graph.graph.out_edges(node))
                 if len(in_edge) == 0:
                     raise ValueError(
                         ("Deleting the edge would break the graph"),
                         "Are you trying to delete the origin?",
                     )
 
-                graph = merge_edge(graph, in_edge[0][0], node, out_edge[0][1])
+                merge_edge(skeleton_graph, in_edge[0][0], node, out_edge[0][1])
                 logger.info("merge")
 
     # check if graph is still connected, if not remove orphaned nodes
     skeleton_graph.graph.remove_nodes_from(list(nx.isolates(skeleton_graph.graph)))
-    skeleton_graph.graph = graph
+    # skeleton_graph.graph = graph
 
 
 def length_pruning(skeleton_graph: SkeletonGraph, length_threshold: int):
@@ -409,3 +436,99 @@ def move_branch_point_along_edge(
 
     # update graph
     skeleton_graph.graph = graph
+
+
+def connect_without_merging(
+    skeleton_graph: SkeletonGraph, node1: int, node2: int, return_graph: bool = False
+):
+    """Connect two nodes without merging them.
+
+    A line is just drawn between the two nodes.
+
+    Parameters
+    ----------
+    skeleton_graph : SkeletonGraph
+        The skeleton graph object.
+    node1 : int
+        The first node to connect.
+    node2 : int
+        The second node to connect.
+    return_graph : bool, optional
+        If True, return the modified graph.
+        Default is False.
+
+    Returns
+    -------
+    nx.DiGraph
+        The modified skeleton graph with the new edge added.
+    """
+    # check if directed
+    if not skeleton_graph.graph.is_directed():
+        ValueError("Graph is not directed. Convert to directed graph.")
+    # copy graph
+    graph = skeleton_graph.graph.copy()
+    # check if nodes are already connected
+    if graph.has_edge(node1, node2):
+        logger.warning(f"Nodes {node1} and {node2} are already connected.")
+
+    u_coordinates = skeleton_graph.graph.nodes[node1][NODE_COORDINATE_KEY]
+    v_coordinates = skeleton_graph.graph.nodes[node2][NODE_COORDINATE_KEY]
+    path = np.linspace(u_coordinates, v_coordinates, num=20)
+    spline = B3Spline.from_points(path)
+
+    g = skeleton_graph.graph.copy()
+    g.add_edge(
+        node1,
+        node2,
+        **{
+            EDGE_COORDINATES_KEY: path,
+            EDGE_SPLINE_KEY: spline,
+            START_NODE_KEY: node1,
+            END_NODE_KEY: node2,
+        },
+    )
+
+    skeleton_graph.graph = g
+    if return_graph:
+        return skeleton_graph.graph
+
+
+def merge_nodes(
+    skeleton_graph: SkeletonGraph,
+    node_to_keep: int,
+    node_to_merge: int,
+):
+    """Merge two nodes in a graph.
+
+    Parameters
+    ----------
+    skeleton_graph : nx.Graph
+        The skeleton in which to perform the merging.
+    node_to_keep : int
+        The index of the merged nodes to keep in the graph.
+    node_to_merge : int
+        The index of the merged nodes that should be removed.
+
+
+    """
+    degree_of_merge = skeleton_graph.graph.degree(node_to_merge)
+    if degree_of_merge != 1:
+        raise ValueError(
+            f"Node {node_to_merge} has degree {degree_of_merge}. "
+            "Only nodes with degree 1 can be merged."
+        )
+    edge_to_merge = skeleton_graph.graph.in_edges(node_to_merge)
+    second_node_to_keep = next(iter(edge_to_merge))[0]
+    skeleton_graph.graph = connect_without_merging(
+        skeleton_graph=skeleton_graph,
+        node1=node_to_keep,
+        node2=node_to_merge,
+        return_graph=True,
+    )
+
+    merge_edge(
+        skeleton_graph=skeleton_graph,
+        n1=node_to_keep,
+        v1=node_to_merge,
+        n2=second_node_to_keep,
+    )

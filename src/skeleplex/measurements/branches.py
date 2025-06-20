@@ -30,6 +30,12 @@ def filter_and_segment_lumen(
 ):
     """
     Filter and segment the lumen in the image slices.
+
+    Uses the spline to seed an prompt for SAM2
+    https://github.com/facebookresearch/sam2/tree/main
+
+    And a resnet classifier to classify the slices into lumen, branches and bad.
+
     By convention, the lumen is labeled as 2, the tissue as 1 and the background as 0.
 
     Only the central label of the slice is considered, which is the label at the
@@ -244,7 +250,8 @@ def filter_for_iterative_lumens(data_path, save_path):
     data_path : str
         Path to the input data directory containing .h5 files.
     save_path : str
-        Path to the output directory where filtered .h5 files will be saved."""
+        Path to the output directory where filtered .h5 files will be saved.
+    """
     if not os.path.exists(save_path):
         os.makedirs(save_path)
         logger.info(f"Created directory: {save_path}")
@@ -438,6 +445,7 @@ def add_measurements_from_h5_to_graph(graph_path, input_path):
     The slice names need to be in the format:
 
     {base}_{name}_{start_node}_{end_node}.h5
+
     Valid files are usually generated using the sample_slices_from_graph function from
     the SkeletonGraph class. Its highly advised to use the filtering
     functions first.
