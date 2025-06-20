@@ -270,6 +270,11 @@ def sample_slices_for_edge(
     approx : bool
         Whether to use approximate sampling.
 
+    Returns
+    -------
+    tuple
+        A tuple containing the edge (u, v), image slice, and segmentation slice.
+
     """
     logger.info(f"Sampling slices from edge ({u}, {v})")
 
