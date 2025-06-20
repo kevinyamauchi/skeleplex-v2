@@ -2,6 +2,9 @@
 
 import networkx as nx
 import numpy as np
+import numpy as np
+import dask.array as da
+import tempfile
 
 from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
@@ -100,3 +103,77 @@ def test_skeleton_graph_orient_splines(simple_t_with_flipped_spline):
     np.testing.assert_allclose(
         oriented_edge_coordinates, correct_spline_coordinates, atol=0.5
     )
+
+def create_straight_edge_volume(scale=1):
+    # Create the in-memory array
+    volume = np.zeros((50//scale, 50//scale, 50//scale), dtype=np.float32)
+    volume[10//scale:30//scale, 0:10//scale, 0:10//scale] = 1
+    return da.from_array(volume, chunks=(10, 10, 10))
+
+def test_sample_volume_slices_from_spline(straight_edge_graph):
+    straight_edge_graph.origin = 0
+
+    # Create a straight edge volume
+    straight_edge_volume = create_straight_edge_volume(scale = 2)
+    #scale volume to voxel size 2
+    straight_edge_graph.voxel_size_um = (2, 2, 2)
+
+
+    slices_vox2 =straight_edge_graph.sample_volume_slices_from_spline(
+        straight_edge_volume,
+        slice_spacing=0.3,
+        slice_size=10,
+        interpolation_order=1,
+        approx=True,)
+    
+    # Create a straight edge volume
+    straight_edge_volume = create_straight_edge_volume(scale = 1)
+    #scale volume to voxel size 2
+    straight_edge_graph.voxel_size_um = (1, 1, 1)
+
+    slices_vox1 =straight_edge_graph.sample_volume_slices_from_spline(
+        straight_edge_volume,
+        slice_spacing=0.3,
+        slice_size=10,
+        interpolation_order=1,
+        approx=True,)
+
+    for key, slice in slices_vox1.items():
+        slice_vox2 = slices_vox2[key]
+        np.testing.assert_allclose(slice, slice_vox2, atol=1e-5, equal_nan=True)
+
+
+def test_sample_volume_slices_from_spline_parallel(straight_edge_graph):
+    # Create temporary directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save volume to Zarr store
+        straight_edge_volume = create_straight_edge_volume(scale = 1)
+        straight_edge_volume.to_zarr(tmpdir + 'scale_1.zarr')
+        straight_edge_graph.origin = 0
+        straight_edge_graph.voxel_size_um = (1, 1, 1)
+        # Now pass to your function
+        slices_vox1 = straight_edge_graph.sample_volume_slices_from_spline_parallel(
+            tmpdir + 'scale_1.zarr',
+            slice_spacing=0.3,
+            slice_size=10,
+            interpolation_order=1,
+            approx=True,
+            num_workers=1,
+        )
+
+        straight_edge_volume = create_straight_edge_volume(scale = 2)
+        straight_edge_volume.to_zarr(tmpdir + 'scale_2.zarr')
+        straight_edge_graph.origin = 0
+        straight_edge_graph.voxel_size_um = (2, 2, 2)
+        # Now pass to your function
+        slices_vox2 = straight_edge_graph.sample_volume_slices_from_spline_parallel(
+            tmpdir + 'scale_2.zarr',
+            slice_spacing=0.3,
+            slice_size=10,
+            interpolation_order=1,
+            approx=True,
+            num_workers=1,
+        )
+        for key, slice in slices_vox1.items():
+            slice_vox2 = slices_vox2[key]
+            np.testing.assert_allclose(slice, slice_vox2, atol=1e-5, equal_nan=True)

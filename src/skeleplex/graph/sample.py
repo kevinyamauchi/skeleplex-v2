@@ -144,8 +144,6 @@ def sample_volume_at_coordinates_lazy(
     np.ndarray
         Array of shape (*grid_shape)
     """
-    print(coordinates.shape)
-
     batch, *grid_shape, _ = coordinates.shape
 
     min_coords = np.floor(coordinates.min(axis=(0, 1, 2))).astype(int)

@@ -574,8 +574,13 @@ class SkeletonGraph:
             The segmentation to sample slices from.
             If None, only the image is sampled.
         approx : bool
-            If True, use the approximate spline evaluation.
-            If False, use the exact spline evaluation.
+            If True, use a quick conversion from normalized arc length
+            coordinates to spline parameter coordinates.
+            The more evenly spaced the spline knots are, the more accurate this
+            approximation becomes.
+            If False, use a binary search to find the parameterized arc length
+            that corresponds to the normalized arc length coordinates.
+            Default value is False.
 
         Returns
         -------
@@ -590,7 +595,7 @@ class SkeletonGraph:
         image_voxel_size_um = self.voxel_size_um
 
         origin = self.origin
-        if not origin:
+        if not origin and origin != 0:
             raise ValueError("No origin node provided. Please set origin.")
 
         if not image_voxel_size_um:
@@ -690,7 +695,7 @@ class SkeletonGraph:
         """
         image_voxel_size_um = self.voxel_size_um
         origin = self.origin
-        if not origin:
+        if not origin and origin != 0:
             raise ValueError("No origin node provided. Please set origin.")
 
         if not image_voxel_size_um:
