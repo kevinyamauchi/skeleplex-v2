@@ -109,3 +109,72 @@ def sample_volume_at_coordinates(
     sampled_volume = sampled_volume.reshape(*grid_shape, batch)
     # and retranspose to get batch back to the 0th dimension
     return einops.rearrange(sampled_volume, "... batch -> batch ...")
+
+
+def sample_volume_at_coordinates_lazy(
+    volume: np.ndarray,
+    coordinates: np.ndarray,
+    interpolation_order: int = 3,
+    fill_value: float = np.nan,
+) -> np.ndarray:
+    """
+    Sample a volume with spline interpolation at specific coordinates.
+
+    This function is designed to work with large volumes that are too big to fit
+    into memory. It extracts only the necessary chunk of the volume and samples
+    that chunk.
+    The output shape is determined by the input coordinate shape such that
+    if coordinates have shape (batch, *grid_shape, 3), the output array will have
+    shape (*grid_shape, batch).
+
+    Parameters
+    ----------
+    volume : np.ndarray
+        Volume to be sampled.
+    coordinates : np.ndarray
+        Array of coordinates at which to sample the volume. The shape of this array
+        should be (batch, *grid_shape, 3) to allow reshaping back correctly
+    interpolation_order : int
+        Spline order for image interpolation.
+    fill_value : float
+        Value to fill in for sample coordinates past the edges of the volume.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (*grid_shape)
+    """
+    batch, *grid_shape, _ = coordinates.shape
+
+    min_coords = np.floor(coordinates.min(axis=(0, 1, 2))).astype(int)
+    max_coords = np.ceil(coordinates.max(axis=(0, 1, 2))).astype(int)
+
+    # Clip to valid range
+    min_coords = np.clip(min_coords, 0, np.array(volume.shape) - 1)
+    max_coords = np.clip(max_coords, 1, np.array(volume.shape))  # avoid empty slices
+
+    if np.any(max_coords <= min_coords):
+        raise ValueError("Sliced volume would be empty due to coordinate range.")
+
+    # Extract only the necessary chunk (use slicing)
+    sliced_volume = volume[
+        min_coords[0] : max_coords[0],
+        min_coords[1] : max_coords[1],
+        min_coords[2] : max_coords[2],
+    ].compute()  # Convert to NumPy only for this chunk
+
+    # Adjust coordinates relative to the extracted chunk
+    coordinates -= min_coords
+
+    # Sample the smaller volume using `map_coordinates`
+    sampled_volume = map_coordinates(
+        sliced_volume,
+        coordinates.reshape(-1, 3).T,
+        order=interpolation_order,
+        cval=fill_value,
+    )
+
+    # Reshape back to (*grid_shape, batch)
+    sampled_volume = sampled_volume.reshape(*grid_shape, batch)
+
+    return einops.rearrange(sampled_volume, "... batch -> batch ...")
