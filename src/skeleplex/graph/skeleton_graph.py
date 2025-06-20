@@ -242,7 +242,35 @@ def sample_slices_for_edge(
     image_voxel_size_um,
     approx,
 ):
-    """Helper function for parallel execution."""
+    """Helper function for parallel execution.
+    This function is used to sample slices from a spline in a skeleton graph.
+
+    Parameters
+    ----------
+    u : int
+        The source node of the edge.
+    v : int
+        The target node of the edge.
+    spline : Spline
+        The spline to sample from.
+    volume_path : str
+        The path to the volume to sample from.
+    segmentation_path : str
+        The path to the segmentation to sample from.
+    positions : np.ndarray
+        The positions to sample from.
+    slice_size : int
+        The size of the slices to sample.
+    pixel_size : float
+        The size of the pixels in the volume.
+    interpolation_order : int
+        The order of the interpolation to use.
+    image_voxel_size_um : float
+        The voxel size of the image in micrometers.
+    approx : bool
+        Whether to use approximate sampling.
+
+    """
     logger.info(f"Sampling slices from edge ({u}, {v})")
 
     volume = da.from_zarr(volume_path, chunks="auto")
@@ -623,6 +651,7 @@ class SkeletonGraph:
         max_generation: int | None = None,
         min_generation: int | None = None,
         segmentation_path: da.Array | None = None,
+        num_workers: int = os.cpu_count() - 2,
         approx: bool = False,
     ):
         """Sample volume slices from the splines in the graph in parallel.
@@ -651,6 +680,9 @@ class SkeletonGraph:
             The segmentation path to sample slices from.
             Must be path to a zarr file. Otherwise its not pickleable.
             If None, only the image is sampled.
+        num_workers : int
+            The number of workers to use for parallel processing.
+            Defaults to the number of CPU cores minus 2.
         approx : bool
             If True, use the approximate spline evaluation.
             If False, use the exact spline evaluation.
@@ -665,16 +697,15 @@ class SkeletonGraph:
             logger.warning("No voxel size provided. Assuming pixel size is 1 µm.")
             image_voxel_size_um = (1, 1, 1)
 
-        graph = self.graph.copy()
-        generation_dict = nx.get_edge_attributes(graph, GENERATION_KEY)
-        spline_dict = nx.get_edge_attributes(graph, EDGE_SPLINE_KEY)
+        generation_dict = nx.get_edge_attributes(self.graph, GENERATION_KEY)
+        spline_dict = nx.get_edge_attributes(self.graph, EDGE_SPLINE_KEY)
 
         pixel_size = 1 / image_voxel_size_um[0]
 
         # Prepare a list of edges to process
         edges_to_process = [
             (u, v)
-            for u, v in nx.breadth_first_search.bfs_edges(graph, source=origin)
+            for u, v in nx.breadth_first_search.bfs_edges(self.graph, source=origin)
             if (max_generation is None or generation_dict[(u, v)] <= max_generation)
             and (min_generation is None or generation_dict[(u, v)] > min_generation)
         ]
@@ -706,7 +737,7 @@ class SkeletonGraph:
         logger.info(f"Processing {len(tasks)} edges in parallel.")
         with ProgressBar():
             results = dask.compute(
-                *tasks, num_workers=os.cpu_count() - 2, scheduler="processes"
+                *tasks, num_workers=num_workers, scheduler="processes"
             )
 
         # Combine results into dictionaries
