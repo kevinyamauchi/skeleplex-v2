@@ -5,6 +5,7 @@ from skeleplex.graph.sample import (    generate_2d_grid,
 import numpy as np
 import dask.array as da
 
+
 def test_sample_volume_at_coordinates():
     """Test sampling a volume at specific coordinates."""
     # Create a simple 3D volume
