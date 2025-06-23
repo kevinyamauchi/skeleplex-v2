@@ -3,7 +3,7 @@
 import numpy as np
 
 from skeleplex.graph.spline import B3Spline
-from skeleplex.visualize.spline import line_segment_coordinates_from_spline
+from skeleplex.visualize import line_segment_coordinates_from_spline
 
 
 def test_line_segment_coordinates_from_spline():
@@ -32,7 +32,6 @@ def test_line_segment_coordinates_from_spline():
     np.testing.assert_allclose(line_coordinates[-1], points_to_fit[-1], atol=1e-6)
 
     # check that the coordinates are correctly interleaved to make line segments
-    print(line_coordinates)
     for i in range(1, n_line_segments):
         np.testing.assert_allclose(
             line_coordinates[2 * i - 1], line_coordinates[2 * i], atol=1e-6

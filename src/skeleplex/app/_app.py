@@ -91,6 +91,7 @@ class SkelePlexApp(Application):
         self._viewer.main_canvas.update_skeleton_geometry(
             node_coordinates=self.data.view.node_coordinates,
             edge_coordinates=self.data.view.edge_coordinates,
+            edge_colors=self.data.view.edge_colors,
         )
 
     def look_at_skeleton(self) -> None:
