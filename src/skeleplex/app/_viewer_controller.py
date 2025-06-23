@@ -9,6 +9,7 @@ from cellier.models.data_stores.lines import LinesMemoryStore
 from cellier.models.data_stores.points import PointsMemoryStore
 from cellier.models.visuals import (
     LinesUniformAppearance,
+    LinesVertexColorAppearance,
     LinesVisual,
     PointsUniformAppearance,
     PointsVisual,
@@ -66,9 +67,25 @@ class MainCanvasController:
         return self._scene_id
 
     def update_skeleton_geometry(
-        self, edge_coordinates: np.ndarray, node_coordinates: np.ndarray
+        self,
+        edge_coordinates: np.ndarray,
+        edge_colors: np.ndarray,
+        node_coordinates: np.ndarray,
     ):
-        """Update the geometry of the skeleton in the viewer."""
+        """Update the geometry of the skeleton in the viewer.
+
+        Parameters
+        ----------
+        edge_coordinates : np.ndarray
+            (n_edges * 2 * n_segments_per_edge) array of coordinates of
+            the edges of the skeleton to be rendered.
+        edge_colors : np.ndarray
+            (n_edges * 2 * n_segments_per_edge, 4 ) RGBA array of colors
+            of the edges of the skeleton to be rendered.
+        node_coordinates : np.ndarray
+            (n_nodes, 3) array of coordinates of the nodes of the skeleton
+            to be rendered.
+        """
         # make the highlight lines store
         if self._skeleton.edge_highlight_store is None:
             # if the highlight store is not populated, create it
@@ -99,15 +116,18 @@ class MainCanvasController:
 
         # update the lines store
         if self._skeleton.edges_store is None:
-            self._skeleton.edges_store = LinesMemoryStore(coordinates=edge_coordinates)
+            self._skeleton.edges_store = LinesMemoryStore(
+                coordinates=edge_coordinates, colors=edge_colors
+            )
             self._backend.add_data_store(data_store=self._skeleton.edges_store)
         else:
             self._skeleton.edges_store.coordinates = edge_coordinates.astype(np.float32)
+            self._skeleton.edges_store.colors = edge_colors.astype(np.float32)
 
         if self._skeleton.edges_visual is None:
             # if the lines visual is not populated, create it
-            edge_lines_material_3d = LinesUniformAppearance(
-                color=(0, 0, 1, 1), size=2, size_coordinate_space="data"
+            edge_lines_material_3d = LinesVertexColorAppearance(
+                size=2, size_coordinate_space="data"
             )
 
             # make the lines model

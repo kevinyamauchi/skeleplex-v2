@@ -423,6 +423,7 @@ class CurationManager:
 
         # Update the skeleton graph data
         self._data._update_edge_coordinates()
+        self._data._update_edge_colors()
         self._data._update_node_coordinates()
 
         # Update the data view
