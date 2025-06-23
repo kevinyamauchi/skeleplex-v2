@@ -6,13 +6,14 @@ from enum import Enum
 
 import numpy as np
 from cellier.types import MouseButton, MouseCallbackData, MouseEventType, MouseModifiers
+from cmap import Color
 from psygnal import EventedModel, Signal, SignalGroup
 from pydantic.types import FilePath
 
 from skeleplex.graph import SkeletonGraph
 from skeleplex.graph.constants import NODE_COORDINATE_KEY
 from skeleplex.utils import line_segments_in_aabb, points_in_aabb
-from skeleplex.visualize.spline import line_segment_coordinates_from_spline
+from skeleplex.visualize import EdgeColormap, line_segment_coordinates_from_spline
 
 log = logging.getLogger(__name__)
 
@@ -178,6 +179,7 @@ class DataView:
         self._edge_coordinates: np.ndarray | None = None
         self._edge_indices: np.ndarray | None = None
         self._edge_keys: np.ndarray | None = None
+        self._edge_colors: np.ndarray | None = None
         self._highlighted_edge_keys: np.ndarray | None = None
         self._node_coordinates: np.ndarray | None = None
         self._node_keys: np.ndarray | None = None
@@ -256,6 +258,14 @@ class DataView:
         return self._edge_keys
 
     @property
+    def edge_colors(self) -> np.ndarray | None:
+        """Get the colors of the edges in the rendered graph.
+
+        (n_edges x 2 x n_points_per_edge, 4) array of RGBA colors.
+        """
+        return self._edge_colors
+
+    @property
     def highlighted_edge_keys(self) -> np.ndarray | None:
         """Get keys of the highlighted edges for each coordinate in the rendered graph.
 
@@ -278,6 +288,7 @@ class DataView:
                 self._edge_coordinates,
                 self._edge_indices,
                 self._edge_keys,
+                self._edge_colors,
             ) = self._get_view_all()
             self._highlighted_edge_keys = np.empty((0, 2))
         elif self._mode == ViewMode.BOUNDING_BOX:
@@ -287,6 +298,7 @@ class DataView:
                 self._edge_coordinates,
                 self._edge_indices,
                 self._edge_keys,
+                self._edge_colors,
             ) = self._get_view_bounding_box()
             self._highlighted_edge_keys = np.empty((0, 2))
         else:
@@ -297,7 +309,7 @@ class DataView:
 
     def _get_view_all(
         self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get the view for all data.
 
         Returns
@@ -314,6 +326,8 @@ class DataView:
             The indices of the edges in the skeleton graph.
         edge_keys : np.ndarray
             The keys of the edge for each edge coordinate in the skeleton graph.
+        edge_colors : np.ndarray
+            (n_edges x 2 x n_points_per_edge, 4) array of RGBA colors for the edges.
 
         """
         return (
@@ -322,11 +336,12 @@ class DataView:
             self._data_manager.edge_coordinates,
             self._data_manager.edge_indices,
             self._data_manager.edge_keys,
+            self._data_manager.edge_colors,
         )
 
     def _get_view_bounding_box(
         self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get the view for the current bounding box.
 
         Returns
@@ -368,6 +383,7 @@ class DataView:
         edge_coordinates = self._data_manager.edge_coordinates[edges_inside]
         edge_indices = self._data_manager.edge_indices[edges_inside]
         edge_keys = self._data_manager.edge_keys[edges_inside]
+        edge_colors = self._data_manager.edge_colors[edges_inside]
 
         return (
             node_coordinates,
@@ -375,6 +391,7 @@ class DataView:
             edge_coordinates,
             edge_indices,
             edge_keys,
+            edge_colors,
         )
 
     def _on_view_request(self, request: BoundingBoxViewRequest):
@@ -525,13 +542,22 @@ class DataManager:
         This is None when the skeleton hasn't been loaded.
     edge_coordinates : np.ndarray | None
         The coordinates for rendering the edges in the skeleton graph
-        as line segments. This is None when the skeleton hasn't been loaded.
+        as line segments. Each edge is rendered as a sequence of line
+        segments. All line segments are stored in this array.
+        The array has shape (n_line_segments * 2, 3) where
+        line segment n is defined by the start coordinate
+        edge_coordinates[n * 2, :] and end coordinate
+        edge_coordinates[n * 2 + 1, :].
+        This is None when the skeleton hasn't been loaded.
     edge_indices : np.ndarray | None
         The indices for the edges in the skeleton graph.
         This is None when the skeleton hasn't been loaded.
     edge_keys : np.ndarray | None
         The keys for edges of each edge coordinate in the skeleton graph.
         This is None when the skeleton hasn't been loaded.
+    edge_colors : np.ndarray | None
+        The colors for the edges in the skeleton graph. These are
+        index-matched with the edge_coordinates array.
     """
 
     events = DataEvents()
@@ -540,6 +566,7 @@ class DataManager:
         self,
         file_paths: SkeletonDataPaths,
         selection: SelectionManager | None = None,
+        edge_colormap: EdgeColormap | None = None,
         load_data: bool = True,
     ) -> None:
         self._file_paths = file_paths
@@ -556,15 +583,27 @@ class DataManager:
             )
         self._selection = selection
 
+        # make the edge colormap
+        if edge_colormap is None:
+            # default edge color is blue
+            edge_colormap = EdgeColormap(
+                colormap={}, default_color=Color([0.0, 0.0, 1.0, 1.0])
+            )
+        self._edge_colormap = edge_colormap
+
         # initialize the data
         self._skeleton_graph: SkeletonGraph | None = None
         self._node_coordinates: np.ndarray | None = None
         self._edge_coordinates: np.ndarray | None = None
         self._edge_indices: np.ndarray | None = None
         self._edge_keys: np.ndarray | None = None
+        self._edge_colors: np.ndarray | None = None
 
         if self.file_paths.has_paths() and load_data:
             self.load()
+
+        # connect the event for updating the view when the data is changed
+        self.events.data.connect(self._view.update)
 
     @property
     def file_paths(self) -> SkeletonDataPaths:
@@ -627,6 +666,40 @@ class DataManager:
         """
         return self._edge_keys
 
+    @property
+    def edge_colors(self) -> np.ndarray | None:
+        """Get the colors of each edge line segment.
+
+        (n_edges x 2 x n_points_per_edge, 4) array of RGBA colors.
+        """
+        return self._edge_colors
+
+    @property
+    def edge_colormap(self) -> EdgeColormap:
+        """Get the edge colormap."""
+        return self._edge_colormap
+
+    @edge_colormap.setter
+    def edge_colormap(self, colormap: EdgeColormap, emit_event: bool = True) -> None:
+        """Set the edge colormap.
+
+        Parameters
+        ----------
+        colormap : EdgeColormap
+            The new edge colormap to use.
+        emit_event : bool
+            If set to True, the DataManager.events.data signal is emitted.
+            This will trigger a redraw of the data view.
+        """
+        self._edge_colormap = colormap
+
+        # update the edge colors
+        self._update_edge_colors()
+
+        if emit_event:
+            # update the data event for triggering redraw
+            self.events.data.emit()
+
     def load(self) -> None:
         """Load data."""
         # load the skeleton graph
@@ -637,6 +710,7 @@ class DataManager:
             )
             self._update_node_coordinates()
             self._update_edge_coordinates()
+            self._update_edge_colors()
         else:
             log.info("No skeleton graph loaded.")
             self._skeleton_graph = None
@@ -692,6 +766,20 @@ class DataManager:
         self._edge_coordinates = np.concatenate(edge_coordinates)
         self._edge_indices = np.concatenate(edge_indices)
         self._edge_keys = np.concatenate(edge_keys)
+
+    def _update_edge_colors(self) -> None:
+        """Update the edge colors based on the current edge colormap.
+
+        If the edge coordinates or the edges are not set, this does
+        not do anything. Thus, this must be called after
+        DataManager._update_edge_coordinates().
+        """
+        if self._edge_coordinates is None or self._edge_keys is None:
+            # don't do anything if the edge coordinates or keys are not set
+            return
+
+        # map the edge keys to colors using the colormap
+        self._edge_colors = self.edge_colormap.map_array(self._edge_keys)
 
     def _update_paths_load_data(
         self,
