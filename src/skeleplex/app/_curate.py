@@ -1,11 +1,19 @@
+import numpy as np
+import sys
 from collections import deque
 from copy import deepcopy
 from typing import TYPE_CHECKING, Annotated, Any
+from skeleplex.graph.constants import (
+    EDGE_SPLINE_KEY,
+    NODE_COORDINATE_KEY
+)
+from magicgui import magicgui
 
 from skeleplex.graph.modify_graph import (
     connect_without_merging,
     delete_edge,
     merge_nodes,
+    split_edge
 )
 
 if TYPE_CHECKING:
@@ -101,7 +109,7 @@ def node_string_to_node_keys(node_string: str) -> set[int]:
 
     except (ValueError, SyntaxError) as e:
         raise ValueError(f"Could not parse node string '{node_string}': {e}") from e
-
+    
 
 class LIFOBuffer:
     """A last-in-first-out buffer with a maximum size.
@@ -313,6 +321,65 @@ class CurationManager:
         if redraw:
             # redraw the graph
             self._update_and_request_redraw()
+    
+    # def split_edge(
+    #     self,
+    #     edge: Annotated[set[tuple[int, int]] | str, {"widget_type": "LineEdit"}],
+    #     split_pos: Annotated[float, {'widget_type': "FloatSlider",
+    #                               'min': 0,
+    #                               'max': 1,
+    #                               'step': 0.01}],
+    #     redraw: bool = True,
+    # ):
+    #     """Split an edge at a given position.
+
+    #     Parameters
+    #     ----------
+    #     edge : tuple[int, int] | str
+    #         The ID of the edge to split.
+    #     split_pos : float
+    #         The position to split the edge at, between 0 and 1.
+    #     """
+    #     # convert the edge ID to a key
+    #     edge_key = edge_string_to_key(edge)
+    #     edge_key  = next(iter(edge_key))
+    #     self._undo_buffer.push(deepcopy(self._data.skeleton_graph))
+    #     # call the split_edge function
+    #     split_edge(self._data.skeleton_graph, edge_key, split_pos)
+    #     # reslice the viewer to update the display
+    #     if redraw:
+    #         self._update_and_request_redraw()
+        
+
+        
+    # def preview_split_edge(self,split_edge_widget):
+    #     """Preview the split edge operation.
+
+    #     This is supposed to be connected to the split_edge_widget
+    #     by calling split_edge_widget.split_pos.changed.connect(preview_split_edge)
+    #     to update the preview of the split edge in the viewer.
+    #     """
+    #     edge_to_split_ID = split_edge_widget.edge.value
+    #     split_pos = split_edge_widget.split_pos.value
+    #     points_store = split_edge_widget.point_store
+    #     points_visual = split_edge_widget.point_visual
+
+    #     # convert the edge ID to a key
+    #     edge_key = edge_string_to_key(edge_to_split_ID)
+    #     edge_key  = next(iter(edge_key))
+
+    #     spline = self._data.skeleton_graph.graph.edges[edge_key][EDGE_SPLINE_KEY]
+    #     point_pos = spline.eval(split_pos)
+    #     #check if point_strore is defined
+
+        
+    #     # set the point coordinates to the point position
+    #     # points_store.coordinates = np.array([0,0,0], dtype=np.float32)
+    #     points_store.coordinates = np.array([point_pos], dtype=np.float32)
+    #     # set the points visibility to True
+    #     points_visual.appearance.visible = True
+
+
 
     def undo(self, redraw: bool = True) -> None:
         """Undo the last action performed on the skeleton graph.
@@ -368,6 +435,41 @@ class CurationManager:
             # redraw the graph
             self._update_and_request_redraw()
 
+
+    def render_around_node(
+            self,
+            node_id = int,
+            bounding_box_width: int = 100,
+        ):
+        """Render a bounding box around the specified node.
+
+        Parameters
+        ----------
+        node_id : int
+            The ID of the node to render around.
+        bounding_box_width : int
+            The width of the bounding box to render around the node.
+            Default is 100.
+        """
+        # get the coordinate of the node
+        node_id = node_string_to_node_keys(node_id)
+        node_id = next(iter(node_id), None)
+        graph_object = self._data.skeleton_graph.graph
+        node_coordinate = graph_object.nodes[node_id][NODE_COORDINATE_KEY]
+
+        # get the minimum and maximum coordinates for the bounding box
+        half_width = bounding_box_width / 2
+        min_coordinate = node_coordinate - half_width
+        max_coordinate = node_coordinate + half_width
+
+        # set the bounding box in the viewer
+        self._data.view.bounding_box._min_coordinate = min_coordinate
+        self._data.view.bounding_box._max_coordinate = max_coordinate
+
+        # set the render mode to bounding box
+        self._data.view.mode = "bounding_box"
+
+
     def _update_and_request_redraw(
         self, clear_edge_selection: bool = True, clear_node_selection: bool = True
     ) -> None:
@@ -384,3 +486,58 @@ class CurationManager:
 
         # Update the data view
         self._data.view.update()
+
+
+def make_split_edge_widget(viewer):
+    """Create a widget for splitting edges in the skeleton graph."""
+    @magicgui(
+        edge_to_split_ID={"widget_type": "LineEdit"},
+        split_pos={"widget_type": "FloatSlider", "min": 0.0,
+                   "max": 1.0,
+                   "step": 0.01,
+                   "value": 0.5},
+    )
+    def split_edge_widget(edge_to_split_ID: int, split_pos: float = 0.5):
+        """Widget to split an edge in the skeleton graph.
+
+        Parameters
+        ----------
+        edge_to_split_ID : str
+            The ID of the edge to split, represented as a string.
+            This should be a string representation of a set of tuples,
+            e.g. "{(1, 2), (2, 3)}".
+        split_pos : float
+            The position to split the edge at, between 0 and 1.
+            Default value is 0.5, which means the edge will be split in the middle
+            of its length.
+        """
+        edge_key = next(iter(edge_string_to_key(edge_to_split_ID)))
+        viewer.curate._undo_buffer.push(deepcopy(viewer.curate._data.skeleton_graph))
+        split_edge(viewer.curate._data.skeleton_graph, edge_key, split_pos)
+        viewer.curate._update_and_request_redraw()
+
+    def preview_split():
+        """Preview the split edge operation.
+
+        This function is connected to the split_pos widget to update the preview
+        of the split edge in the viewer.
+        It calculates the position of the split point based on the current
+        split_pos value and the spline of the edge to be split.
+        The calculated point position is then set in the point_store and made visible.
+        """
+        edge_key = next(iter(edge_string_to_key(
+            split_edge_widget.edge_to_split_ID.value)
+            ))
+        spline = viewer.data.skeleton_graph.graph.edges[edge_key][EDGE_SPLINE_KEY]
+        point_pos = spline.eval(split_edge_widget.split_pos.value)
+
+        split_edge_widget.point_store.coordinates = np.array([point_pos],
+                                                             dtype=np.float32)
+        split_edge_widget.point_visual.appearance.visible = True
+        viewer._viewer._backend.reslice_all()
+
+    split_edge_widget.split_pos.changed.connect(preview_split)
+    split_edge_widget.point_visual, split_edge_widget.point_store = viewer.add_points()
+    split_edge_widget.point_visual.appearance.visible = False
+
+    return split_edge_widget
