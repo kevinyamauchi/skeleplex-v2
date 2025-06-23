@@ -322,65 +322,6 @@ class CurationManager:
             # redraw the graph
             self._update_and_request_redraw()
     
-    # def split_edge(
-    #     self,
-    #     edge: Annotated[set[tuple[int, int]] | str, {"widget_type": "LineEdit"}],
-    #     split_pos: Annotated[float, {'widget_type': "FloatSlider",
-    #                               'min': 0,
-    #                               'max': 1,
-    #                               'step': 0.01}],
-    #     redraw: bool = True,
-    # ):
-    #     """Split an edge at a given position.
-
-    #     Parameters
-    #     ----------
-    #     edge : tuple[int, int] | str
-    #         The ID of the edge to split.
-    #     split_pos : float
-    #         The position to split the edge at, between 0 and 1.
-    #     """
-    #     # convert the edge ID to a key
-    #     edge_key = edge_string_to_key(edge)
-    #     edge_key  = next(iter(edge_key))
-    #     self._undo_buffer.push(deepcopy(self._data.skeleton_graph))
-    #     # call the split_edge function
-    #     split_edge(self._data.skeleton_graph, edge_key, split_pos)
-    #     # reslice the viewer to update the display
-    #     if redraw:
-    #         self._update_and_request_redraw()
-        
-
-        
-    # def preview_split_edge(self,split_edge_widget):
-    #     """Preview the split edge operation.
-
-    #     This is supposed to be connected to the split_edge_widget
-    #     by calling split_edge_widget.split_pos.changed.connect(preview_split_edge)
-    #     to update the preview of the split edge in the viewer.
-    #     """
-    #     edge_to_split_ID = split_edge_widget.edge.value
-    #     split_pos = split_edge_widget.split_pos.value
-    #     points_store = split_edge_widget.point_store
-    #     points_visual = split_edge_widget.point_visual
-
-    #     # convert the edge ID to a key
-    #     edge_key = edge_string_to_key(edge_to_split_ID)
-    #     edge_key  = next(iter(edge_key))
-
-    #     spline = self._data.skeleton_graph.graph.edges[edge_key][EDGE_SPLINE_KEY]
-    #     point_pos = spline.eval(split_pos)
-    #     #check if point_strore is defined
-
-        
-    #     # set the point coordinates to the point position
-    #     # points_store.coordinates = np.array([0,0,0], dtype=np.float32)
-    #     points_store.coordinates = np.array([point_pos], dtype=np.float32)
-    #     # set the points visibility to True
-    #     points_visual.appearance.visible = True
-
-
-
     def undo(self, redraw: bool = True) -> None:
         """Undo the last action performed on the skeleton graph.
 
