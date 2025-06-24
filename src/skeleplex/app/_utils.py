@@ -4,7 +4,8 @@ from qtpy.QtWidgets import QApplication
 from magicgui import magicgui
 import sys
 from skeleplex.app import DataManager, SkelePlexApp, SkeletonDataPaths
-from skeleplex.app._curate import make_split_edge_widget
+from skeleplex.app._curate import make_split_edge_widget, ChangeBranchColorWidget
+import networkx as nx
 # store reference to QApplication to prevent garbage collection
 _app_ref: QApplication | None = None
 
@@ -67,7 +68,7 @@ def view_skeleton(
         )
         split_edge_widget = make_split_edge_widget(viewer)
 
-
+        ChangeBranchColorWidget(viewer)
 
         #add to viewer
         viewer.add_auxiliary_widget(undo_widget.native,

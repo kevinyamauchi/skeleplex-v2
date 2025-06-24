@@ -1,20 +1,30 @@
 import numpy as np
+import networkx as nx
 import sys
 from collections import deque
 from copy import deepcopy
 from typing import TYPE_CHECKING, Annotated, Any
 from skeleplex.graph.constants import (
     EDGE_SPLINE_KEY,
-    NODE_COORDINATE_KEY
+    NODE_COORDINATE_KEY,
+    GENERATION_KEY,
 )
 from magicgui import magicgui
-
+from skeleplex.visualize import EdgeColormap
 from skeleplex.graph.modify_graph import (
     connect_without_merging,
     delete_edge,
     merge_nodes,
     split_edge
 )
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QByteArray
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from io import BytesIO
+import numbers
+
 
 if TYPE_CHECKING:
     # prevent circular import
@@ -483,3 +493,244 @@ def make_split_edge_widget(viewer):
     split_edge_widget.point_visual.appearance.visible = False
 
     return split_edge_widget
+
+class ChangeBranchColorWidget:
+    def __init__(self, viewer):
+        self.viewer = viewer
+
+        # Create magicgui widget
+        self.widget = magicgui(
+            self.change_branch_color,
+            edge_attribute={"choices": self.get_edge_attributes(), "widget_type": "ComboBox"},
+            cmap={"widget_type": "ComboBox", "choices": plt.colormaps()},
+            vmin={"widget_type": "FloatSlider", "min": 0, "max": 1, "step": 1, "value": 0},
+            vmax={"widget_type": "FloatSlider", "min": 0, "max": 1, "step": 1, "value": 1},
+        )
+
+        self.widget.call_button.visible = False
+
+        self.run_button = QPushButton("Run")
+        self.run_button.clicked.connect(self._on_run_clicked)
+        
+        self.filter_button = QPushButton("Filter Edges")
+        self.filter_button.clicked.connect(self._on_filter_clicked)
+
+
+
+        # QLabel for colorbar
+        self.colorbar_label = QLabel()
+
+        # Layout to contain both magicgui and colorbar
+        self.container = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.widget.native)
+        layout.addWidget(self.run_button)
+        layout.addWidget(self.filter_button)        
+        layout.addWidget(self.colorbar_label)
+        self.container.setLayout(layout)
+
+        self.widget.edge_attribute.changed.connect(self._on_attribute_change)
+        self._on_attribute_change(self.widget.edge_attribute.value)
+        
+        self.widget.vmin.changed.connect(self._on_slider_value_change)
+        self.widget.vmax.changed.connect(self._on_slider_value_change)
+
+        # Add the full container widget to the viewer
+        self.viewer.add_auxiliary_widget(self.container, name="Change Branch Color")
+
+    def change_branch_color(self, edge_attribute: str, cmap: str, vmin: float, vmax: float):
+        cange_color_attr(
+            self.viewer,
+            edge_attribute=edge_attribute,
+            cmap=plt.get_cmap(cmap),
+            vmin=vmin,
+            vmax=vmax
+        )
+    def filter_edges(self):
+        """Filter edges based on the selected edge attribute and its value range."""
+        edge_attribute = self.widget.edge_attribute.value
+        cmap = plt.get_cmap(self.widget.cmap.value)
+        vmin = self.widget.vmin.value
+        vmax = self.widget.vmax.value
+
+        filter_edges_by_attribute(
+            self.viewer,
+            edge_attribute=edge_attribute,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+
+    def get_edge_attributes(self):
+        """Get the edge attributes from the skeleton graph."""
+        if not self.viewer.data.skeleton_graph.graph.edges:
+            return []
+        attribute_set = set()
+        for _, _, edge_data in self.viewer.data.skeleton_graph.graph.edges(data=True):
+            attribute_set.update(edge_data.keys())
+        return list(attribute_set)
+
+    def get_min_max_values(self, edge_attribute: str):
+        """Get the min and max values of the specified edge attribute."""
+        values = [
+            value for _, value in
+            nx.get_edge_attributes(self.viewer.data.skeleton_graph.graph, edge_attribute).items()
+            if isinstance(value, numbers.Number)
+        ]
+        return np.nanmin(values), np.nanmax(values)
+    
+    def _on_run_clicked(self):
+        """Apply coloring."""
+        self.change_branch_color(
+            self.widget.edge_attribute.value,
+            self.widget.cmap.value,
+            self.widget.vmin.value,
+            self.widget.vmax.value,
+    )
+
+    def _on_filter_clicked(self):
+        """Run a filter function — define this to do whatever you need."""
+        self.filter_edges()
+
+    
+
+    def _update_vmin_vmax(self, edge_attribute: str):
+        """Update the vmin and vmax sliders based on the edge attribute."""
+        vmin, vmax = self.get_min_max_values(edge_attribute)
+        self.widget.vmin.min = vmin -1
+        self.widget.vmin.max = vmax +1
+        self.widget.vmax.min = vmin -1
+        self.widget.vmax.max = vmax +1
+        self.widget.vmin.value = vmin
+        self.widget.vmax.value = vmax
+
+    def _on_attribute_change(self, value):
+        """Callback when edge attribute is changed."""
+        self._update_vmin_vmax(value)
+        self._update_colorbar(value, self.widget.vmin.value, self.widget.vmax.value)
+
+    def _on_slider_value_change(self):
+        edge_attr = self.widget.edge_attribute.value
+        vmin = self.widget.vmin.value
+        vmax = self.widget.vmax.value
+        self._update_colorbar(edge_attr, vmin, vmax)
+
+    def _update_colorbar(self, attribute_name, vmin, vmax):
+        cmap = plt.get_cmap(self.widget.cmap.value)  # Correctly get cmap name from ComboBox
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+
+        fig, ax = plt.subplots(figsize=(4, 0.4))
+        fig.subplots_adjust(bottom=0.5)
+
+        cbar = plt.colorbar(
+            mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+            cax=ax,
+            orientation="horizontal",
+        )
+        cbar.ax.set_xlabel(f"{attribute_name} (Min: {vmin:.2f}, Max: {vmax:.2f})")
+
+        buf = BytesIO()
+        plt.savefig(buf, format="png", bbox_inches="tight", dpi=150)
+        plt.close(fig)
+
+        pixmap = QPixmap()
+        pixmap.loadFromData(QByteArray(buf.getvalue()))
+        self.colorbar_label.setPixmap(pixmap)
+
+def cange_color_attr(
+        viewer, 
+        edge_attribute: str = GENERATION_KEY, 
+        cmap = plt.cm.viridis,
+        # levels: int | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,  
+    ):
+    
+    color_dict = nx.get_edge_attributes(viewer.data.skeleton_graph.graph,
+                                        edge_attribute)
+    
+    for key, value in color_dict.items():
+        if not value:
+            color_dict[key] = np.nan
+
+    if vmin is None:
+        vmin = np.nanmin(list(color_dict.values()))
+    if vmax is None:
+        vmax = np.nanmax(list(color_dict.values()))
+    
+    # generation_dict = nx.get_edge_attributes(viewer.data.skeleton_graph.graph,
+                                                #  GENERATION_KEY)
+    # if not levels:
+    #     levels = max(generation_dict.values())
+
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    color_dict = {k: np.array(cmap(norm(v))) for k, v in color_dict.items()}
+
+    # color_list = []
+    # for edge in viewer.data.skeleton.graph.edges:
+    #     # if generation_dict[edge] > levels:
+    #     #     continue
+    #     edge_color = color_dict_hex.get(edge, "#FFFFFF")
+    #     color_list.append(edge_color)
+
+    #update
+    edge_colormap = EdgeColormap.from_arrays(
+        colormap=color_dict,
+        default_color=np.array([0, 0, 0, 1], dtype=np.float32),
+      ) 
+    viewer.data.edge_colormap = edge_colormap 
+
+    
+def filter_edges_by_attribute(
+    viewer,
+    edge_attribute: str = GENERATION_KEY,
+    cmap=plt.cm.viridis,
+    # levels: int | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    """Filter edges based on a specific attribute and its value range.
+
+    Its better to just render them transparent
+    """
+
+    color_dict = nx.get_edge_attributes(viewer.data.skeleton_graph.graph,
+                                        edge_attribute)
+    for key, value in color_dict.items():
+        if not value:
+            color_dict[key] = np.nan
+
+    if vmin is None:
+        vmin = np.nanmin(list(color_dict.values()))
+    if vmax is None:
+        vmax = np.nanmax(list(color_dict.values()))
+
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    color_dict = {k: np.array(cmap(norm(v))) for k, v in color_dict.items()}
+
+    # generation_dict = nx.get_edge_attributes(skeleton.graph, GENERATION_KEY)
+    # if not levels:
+    #     levels = max(generation_dict.values())
+
+    edges_to_remove = [
+        edge
+        for edge, value in nx.get_edge_attributes(
+            viewer.data.skeleton_graph.graph, edge_attribute
+        ).items()
+        if not isinstance(value, numbers.Number) or not (vmin <= value <= vmax)
+    ]
+
+    for edge in viewer.data.skeleton_graph.graph.edges:
+        # if generation_dict[edge] > levels:
+        #     continue
+        if edge in edges_to_remove:
+            # Render edges that are filtered out as transparent
+            color_dict[edge] = np.array([0, 0, 0, 0], dtype=np.float32)  # Transparent
+        else:
+            color_dict[edge] = color_dict.get(edge, np.array([0, 0, 0, 1], dtype=np.float32))
+
+    edge_colormap = EdgeColormap.from_arrays(
+        colormap=color_dict,
+        default_color=np.array([0, 0, 0, 1], dtype=np.float32),
+      ) 
+    viewer.data.edge_colormap = edge_colormap 
