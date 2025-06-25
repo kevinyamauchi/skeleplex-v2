@@ -361,18 +361,25 @@ class SkelePlexApp(Application):
             self._viewer.main_canvas.remove_skeleton_node_callback(
                 callback=self.data._on_node_selection_click,
             )
-    def add_points(self):
-        """Add points to the viewer."""
+    def add_points(self,
+                   point_coordinates: np.ndarray = np.array([0,0,0],
+                                                              dtype=np.float32)
+                   ) -> tuple[PointsVisual, PointsMemoryStore]:
+        """Add points to the viewer.
+        
+        Parameters
+        ----------
+        point_coordinates : np.ndarray, optional
+            The coordinates of the points to add, by default np.array([0,0,0],
+                                                                dtype=np.float32)
+        
+        Returns
+        -------
+        tuple[PointsVisual, PointsMemoryStore]
+            A tuple containing the PointsVisual and PointsMemoryStore objects.
+        """
         # create a list of points to add
         # note these must be Float32
-        #for now add two dummy points
-        point_coordinates = np.array(
-            [
-                [1000, 1000, 1000],
-                [1500, 1500, 1500],
-            ],
-            dtype=np.float32,
-        )
 
         # make the data store for the points
         new_points_store = PointsMemoryStore(
