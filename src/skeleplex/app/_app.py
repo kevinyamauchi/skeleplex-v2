@@ -17,6 +17,9 @@ from skeleplex.app._viewer_controller import ViewerController
 from skeleplex.app.actions import ACTIONS
 from skeleplex.app.qt import MainWindow
 
+from cellier.models.data_stores import PointsMemoryStore
+from cellier.models.visuals import PointsUniformAppearance, PointsVisual
+
 log = logging.getLogger(__name__)
 
 
@@ -358,3 +361,50 @@ class SkelePlexApp(Application):
             self._viewer.main_canvas.remove_skeleton_node_callback(
                 callback=self.data._on_node_selection_click,
             )
+    def add_points(self,
+                   point_coordinates: np.ndarray = np.array([0,0,0],
+                                                              dtype=np.float32)
+                   ) -> tuple[PointsVisual, PointsMemoryStore]:
+        """Add points to the viewer.
+        
+        Parameters
+        ----------
+        point_coordinates : np.ndarray, optional
+            The coordinates of the points to add, by default np.array([0,0,0],
+                                                                dtype=np.float32)
+        
+        Returns
+        -------
+        tuple[PointsVisual, PointsMemoryStore]
+            A tuple containing the PointsVisual and PointsMemoryStore objects.
+        """
+        # create a list of points to add
+        # note these must be Float32
+
+        # make the data store for the points
+        new_points_store = PointsMemoryStore(
+            coordinates=point_coordinates,
+        )
+
+        # set up the points appearance
+        points_appearance = PointsUniformAppearance(
+            size=50, color=(0, 1, 0, 1), size_coordinate_space="data"
+        )
+
+        # make the highlight points model
+        points_visual = PointsVisual(
+            name="node_highlight_points",
+            data_store_id=new_points_store.id,
+            appearance=points_appearance,
+        )
+
+        # add the data and visual to the viewer backend (cellier)
+        self._viewer._backend.add_data_store(data_store=new_points_store)
+        self._viewer._backend.add_visual(
+            visual_model=points_visual, scene_id=self._viewer._main_canvas.scene_id
+        )
+
+        # reslice the viewer to update the display
+        self._viewer._backend.reslice_all()
+        return points_visual, new_points_store
+
