@@ -1,20 +1,16 @@
-"""
-Functions for computing normalized distance transform.
-"""
+"""Functions for computing normalized distance transform."""
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt, maximum_filter, label
-
+from scipy.ndimage import distance_transform_edt, label, maximum_filter
 
 
 def local_normalized_distance(
-    image: np.ndarray,  
+    image: np.ndarray,
     max_ball_radius: int = 30,
 ) -> np.ndarray:
-    
     """
     Compute normalized distance transform for a binary image.
-    
+
     Parameters
     ----------
     image : np.ndarray
@@ -22,13 +18,12 @@ def local_normalized_distance(
     max_ball_radius : int
         Maximum radius of the ball used for maximum filtering.
         Default is 30.
-        
+
     Returns
     -------
     np.ndarray
         Array of same shape as input image, containing normalized distance values.
-    """        
-
+    """
     image = np.asarray(image)
     binary = image > 0
     labeled, num_labels = label(binary)
@@ -48,8 +43,6 @@ def local_normalized_distance(
         normalized_distance[mask] = distance[mask] / (local_max_distance[mask])
 
     return normalized_distance
-
-
 
 
 def local_normalized_distance_gpu(
@@ -74,7 +67,8 @@ def local_normalized_distance_gpu(
     """
     import cupy as cp
     from cupyx.scipy.ndimage import distance_transform_edt as distance_transform_edt_gpu
-    from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu, label
+    from cupyx.scipy.ndimage import label
+    from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu
 
     image = cp.asarray(image)  # move to GPU
     binary = image > 0
