@@ -11,6 +11,10 @@ def local_normalized_distance(
     """
     Compute normalized distance transform for a binary image.
 
+    This algorithm computes the distance transform for each connected component
+    of the binary image and normalizes the distances locally using a maximum filter.
+    This ensures comparable distance measures across regions of varying sizes.
+
     Parameters
     ----------
     image : np.ndarray
@@ -50,7 +54,12 @@ def local_normalized_distance_gpu(
     max_ball_radius: int = 30,
 ) -> np.ndarray:
     """
-    Compute normalized distance transform for a binary image on the GPU using CuPy.
+    Compute normalized distance transform for a binary image on GPU using CuPy.
+
+    This algorithm computes the distance transform for each connected component
+    of the binary image and normalizes the distances locally using a maximum filter.
+    This ensures comparable distance measures across regions of varying sizes.
+    It is accelerated on the GPU using CuPy.
 
     Parameters
     ----------
@@ -65,10 +74,20 @@ def local_normalized_distance_gpu(
     np.ndarray
         Array of same shape as input image, containing normalized distance values.
     """
-    import cupy as cp
-    from cupyx.scipy.ndimage import distance_transform_edt as distance_transform_edt_gpu
-    from cupyx.scipy.ndimage import label
-    from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu
+    try:
+        import cupy as cp
+        from cupyx.scipy.ndimage import (
+            distance_transform_edt as distance_transform_edt_gpu,
+        )
+        from cupyx.scipy.ndimage import label
+        from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu
+
+    except ImportError as err:
+        raise ImportError(
+            "local_normalized_distance_gpu requires CuPy. "
+            "Please install it by following the CuPy "
+            "installation instructions for your GPU."
+        ) from err
 
     image = cp.asarray(image)  # move to GPU
     binary = image > 0
