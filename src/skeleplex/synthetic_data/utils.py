@@ -1,26 +1,29 @@
+import random  # noqa: D100
+
+import networkx as nx
+import numba
 import numpy as np
 import trimesh
-from skimage.measure import marching_cubes
 from pysdf import SDF
+from scipy.ndimage import distance_transform_edt, label, maximum_filter
+from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
+from skimage.measure import marching_cubes
 from skimage.morphology import ball, binary_dilation
-from scipy.ndimage import distance_transform_edt, maximum_filter, label
+
 from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
     NODE_COORDINATE_KEY,
-    LENGTH_KEY,
 )
 from skeleplex.graph.skeleton_graph import SkeletonGraph
-import random
-from scipy.spatial.transform import Rotation as R
-import networkx as nx
 
 
-import numba
 def add_noise_to_image_surface(image, noise_magnitude=15):
     """
     Adds noise to the surface of a binary 3D image and voxelizes the result.
-    No external voxelizer or napari_process_points_and_surfaces required.
+
+    This function uses marching cubes to extract the surface mesh of the binary image,
+    adds Gaussian noise to the mesh, and then voxelizes the result.
 
     Parameters
     ----------
@@ -34,30 +37,26 @@ def add_noise_to_image_surface(image, noise_magnitude=15):
     ndarray
         Binary voxel volume (Z, Y, X) of the noisy shape.
     """
-
-    #Get surface mesh
+    # Get surface mesh
     verts, faces, _, _ = marching_cubes(image.astype(float), level=0.5)
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
-    #add Gaussian noise to vertices
+    # add Gaussian noise to vertices
     mesh.vertices += np.random.normal(scale=noise_magnitude, size=mesh.vertices.shape)
 
-    #Smooth
+    # Smooth
     mesh = trimesh.smoothing.filter_taubin(mesh, lamb=0.7, nu=-0.3, iterations=10)
 
-
-    x,y,z = np.indices(image.shape)
+    x, y, z = np.indices(image.shape)
     coords = np.stack((x, y, z), axis=-1)  # shape:
-    coords =coords.reshape(-1, 3)  # Flatten to (N, 3)
-
-
+    coords = coords.reshape(-1, 3)  # Flatten to (N, 3)
 
     sdgf = SDF(mesh.vertices, mesh.faces)
     noisey_image = sdgf.contains(coords).reshape(image.shape)
 
-
     return noisey_image.astype(np.uint8)
+
 
 def draw_ellipsoid_at_point(mask, point, radii):
     """
@@ -87,15 +86,14 @@ def draw_ellipsoid_at_point(mask, point, radii):
         np.arange(zmin, zmax),
         np.arange(ymin, ymax),
         np.arange(xmin, xmax),
-        indexing='ij'
+        indexing="ij",
     )
 
     # Compute normalized squared distance
-    norm_sq = ((xx - px) / rx)**2 + ((yy - py) / ry)**2 + ((zz - pz) / rz)**2
+    norm_sq = ((xx - px) / rx) ** 2 + ((yy - py) / ry) ** 2 + ((zz - pz) / rz) ** 2
     local_mask = norm_sq <= 1
 
     mask[zmin:zmax, ymin:ymax, xmin:xmax] |= local_mask.astype(np.uint8)
-
 
 
 def select_points_in_bounding_box(
@@ -103,8 +101,7 @@ def select_points_in_bounding_box(
     lower_left_corner: np.ndarray,
     upper_right_corner: np.ndarray,
 ) -> np.ndarray:
-    """From an array of points, select all points inside a specified
-    axis-aligned bounding box.
+    """Select all points inside a specified axis-aligned bounding box.
 
     Parameters
     ----------
@@ -124,12 +121,11 @@ def select_points_in_bounding_box(
         specified bounding box.
     """
     in_box_mask = np.all(
-        np.logical_and(
-            lower_left_corner <= points, upper_right_corner >= points
-        ),
+        np.logical_and(lower_left_corner <= points, upper_right_corner >= points),
         axis=1,
     )
     return points[in_box_mask]
+
 
 def draw_line_segment(
     start_point: np.ndarray,
@@ -172,13 +168,14 @@ def draw_line_segment(
         skeleton_points[:, 0], skeleton_points[:, 1], skeleton_points[:, 2]
     ] = fill_value
 
+
 def draw_line_segment_wiggle(
     start_point: np.ndarray,
     end_point: np.ndarray,
     skeleton_image: np.ndarray,
     fill_value: int = 1,
     wiggle_factor: float = 0.01,
-    axis: int = None
+    axis: int | None = None,
 ):
     """Draw a line segment in-place.
 
@@ -221,11 +218,19 @@ def draw_line_segment_wiggle(
     # Add sinusoidal noise to the line
     if axis is None:
         axis = np.random.randint(0, 3)
-    skeleton_points[1:-1,axis] += np.random.uniform(-0.5, 0.5, size=n_skeleton_points-2) + sinusoidal_noise[1:-1]
+    skeleton_points[1:-1, axis] += (
+        np.random.uniform(-0.5, 0.5, size=n_skeleton_points - 2)
+        + sinusoidal_noise[1:-1]
+    )
 
-    
-    for i in range(1,len(skeleton_points)-1):
-        draw_line_segment(skeleton_points[i], skeleton_points[i+1], skeleton_image, fill_value=fill_value)
+    for i in range(1, len(skeleton_points) - 1):
+        draw_line_segment(
+            skeleton_points[i],
+            skeleton_points[i + 1],
+            skeleton_image,
+            fill_value=fill_value,
+        )
+
 
 def crop_to_content(branch_image, skeleton_image):
     """Crop the branch and skeleton images to the content."""
@@ -233,22 +238,35 @@ def crop_to_content(branch_image, skeleton_image):
     if branch_nonzero.size == 0:
         return branch_image, skeleton_image
 
-    min_coords = np.array([np.min(np.where(branch_image)[0]),
-                          np.min(np.where(branch_image)[1]),
-                          np.min(np.where(branch_image)[2])])
-    max_coords = np.array([np.max(np.where(branch_image)[0]),
-                          np.max(np.where(branch_image)[1]),
-                          np.max(np.where(branch_image)[2])])
-    
-    branch_cropped = branch_image[min_coords[0]:max_coords[0]+1,
-                                  min_coords[1]:max_coords[1]+1,
-                                  min_coords[2]:max_coords[2]+1]
-    
-    skeleton_cropped = skeleton_image[min_coords[0]:max_coords[0]+1,
-                                      min_coords[1]:max_coords[1]+1,
-                                      min_coords[2]:max_coords[2]+1]
+    min_coords = np.array(
+        [
+            np.min(np.where(branch_image)[0]),
+            np.min(np.where(branch_image)[1]),
+            np.min(np.where(branch_image)[2]),
+        ]
+    )
+    max_coords = np.array(
+        [
+            np.max(np.where(branch_image)[0]),
+            np.max(np.where(branch_image)[1]),
+            np.max(np.where(branch_image)[2]),
+        ]
+    )
+
+    branch_cropped = branch_image[
+        min_coords[0] : max_coords[0] + 1,
+        min_coords[1] : max_coords[1] + 1,
+        min_coords[2] : max_coords[2] + 1,
+    ]
+
+    skeleton_cropped = skeleton_image[
+        min_coords[0] : max_coords[0] + 1,
+        min_coords[1] : max_coords[1] + 1,
+        min_coords[2] : max_coords[2] + 1,
+    ]
 
     return branch_cropped, skeleton_cropped
+
 
 @numba.njit(parallel=True)
 def draw_cylinder_segment(mask, a, b, radius):
@@ -299,12 +317,10 @@ def draw_cylinder_segment(mask, a, b, radius):
                 if dist_sq <= radius_sq:
                     mask[z, y, x] = 1
 
-def draw_wiggly_cylinder_3d(mask,
-                            start_point,
-                            end_point,
-                            radius=2,
-                            wiggle_factor=0.01, 
-                            axis = None):
+
+def draw_wiggly_cylinder_3d(
+    mask, start_point, end_point, radius=2, wiggle_factor=0.01, axis=None
+):
     """Draw a wiggly cylinder in a 3D binary mask.
 
     Parameters
@@ -323,8 +339,8 @@ def draw_wiggly_cylinder_3d(mask,
         Axis along which to apply the wiggle (0: x, 1: y, 2: z).
 
     """
-    start_point = np.array(start_point)[[2,1,0]]
-    end_point = np.array(end_point)[[2,1,0]]
+    start_point = np.array(start_point)[[2, 1, 0]]
+    end_point = np.array(end_point)[[2, 1, 0]]
     axis = np.random.randint(0, 3) if axis is None else axis
     axis = 2 - axis  # Adjust axis for z,y,x order
     branch_length = np.linalg.norm(end_point - start_point)
@@ -342,7 +358,8 @@ def draw_wiggly_cylinder_3d(mask,
     # Wiggle in a random axis
 
     skeleton_points[1:-1, axis] += (
-        np.random.uniform(-0.5, 0.5, size=n_skeleton_points - 2) + sinusoidal_noise[1:-1]
+        np.random.uniform(-0.5, 0.5, size=n_skeleton_points - 2)
+        + sinusoidal_noise[1:-1]
     )
 
     # Draw cylinders along wiggly skeleton
@@ -350,7 +367,6 @@ def draw_wiggly_cylinder_3d(mask,
         a = skeleton_points[i]
         b = skeleton_points[i + 1]
         draw_cylinder_segment(mask, a, b, radius=radius)
-
 
 
 @numba.njit(parallel=True)
@@ -372,7 +388,7 @@ def _draw_elliptic_cylinder_segment(mask, a, b, rx, ry):
 
     """
     d = b - a
-    length = np.sqrt(np.sum(d ** 2))
+    length = np.sqrt(np.sum(d**2))
     if length == 0.0:
         return
 
@@ -393,35 +409,40 @@ def _draw_elliptic_cylinder_segment(mask, a, b, rx, ry):
         tmp = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
     # Just a cross product, but numba complained about np.cross...
-    u = np.array([
-        tmp[1] * d_unit[2] - tmp[2] * d_unit[1],
-        tmp[2] * d_unit[0] - tmp[0] * d_unit[2], 
-        tmp[0] * d_unit[1] - tmp[1] * d_unit[0]
-    ], dtype=np.float32)
-    
-    u_norm = np.sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2])
+    u = np.array(
+        [
+            tmp[1] * d_unit[2] - tmp[2] * d_unit[1],
+            tmp[2] * d_unit[0] - tmp[0] * d_unit[2],
+            tmp[0] * d_unit[1] - tmp[1] * d_unit[0],
+        ],
+        dtype=np.float32,
+    )
+
+    u_norm = np.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2])
     if u_norm > 0:
         u = u / u_norm
 
-    v = np.array([
-        d_unit[1] * u[2] - d_unit[2] * u[1],
-        d_unit[2] * u[0] - d_unit[0] * u[2],
-        d_unit[0] * u[1] - d_unit[1] * u[0]
-    ], dtype=np.float32)
-    
-    v_norm = np.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+    v = np.array(
+        [
+            d_unit[1] * u[2] - d_unit[2] * u[1],
+            d_unit[2] * u[0] - d_unit[0] * u[2],
+            d_unit[0] * u[1] - d_unit[1] * u[0],
+        ],
+        dtype=np.float32,
+    )
+
+    v_norm = np.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
     if v_norm > 0:
         v = v / v_norm
 
     for z in numba.prange(zmin, zmax):
         for y in range(ymin, ymax):
             for x in range(xmin, xmax):
-                p = np.array([np.float32(x),
-                              np.float32(y),
-                              np.float32(z)],
-                              dtype=np.float32)
+                p = np.array(
+                    [np.float32(x), np.float32(y), np.float32(z)], dtype=np.float32
+                )
                 pa = p - a
-                # Just a dot product, but numba complained about np.dot...    
+                # Just a dot product, but numba complained about np.dot...
                 t = pa[0] * d_unit[0] + pa[1] * d_unit[1] + pa[2] * d_unit[2]
                 if t < 0:
                     t = 0
@@ -437,16 +458,37 @@ def _draw_elliptic_cylinder_segment(mask, a, b, rx, ry):
 
 
 def draw_elliptic_cylinder_segment(mask, a, b, rx, ry):
-    """Wrapper to ensure clean Numba-compatible input types"""
+    """Wrapper to ensure clean Numba-compatible input types."""
     a = np.array(a, dtype=np.float32)
     a = a[[2, 1, 0]]  # Convert to z,y,x order
     b = np.array(b, dtype=np.float32)
     b = b[[2, 1, 0]]  # Convert to z,y,x order
     _draw_elliptic_cylinder_segment(mask, a, b, np.float32(rx), np.float32(ry))
 
+
 def make_skeleton_blur_image(
     skeleton_image: np.ndarray, dilation_size: float, gaussian_size: float
 ) -> np.ndarray:
+    """Create a blurred skeleton image from a binary skeleton image.
+
+    Parameters
+    ----------
+    skeleton_image : np.ndarray
+        Binary image where the skeleton is represented by non-zero values.
+        Should be a 3D array.
+    dilation_size : float
+        Size of the structuring element used for dilation.
+        This controls how much the skeleton is dilated before blurring.
+    gaussian_size : float
+        Standard deviation for the Gaussian filter used for blurring.
+        This controls the amount of blurring applied to the skeleton.
+
+    Returns
+    -------
+    np.ndarray
+        Blurred skeleton image, where the skeleton voxels have a value of 1,
+        and the background is normalized to 0.
+    """
     # make a blurred skeleton
     dilated_skeleton = binary_dilation(skeleton_image, ball(dilation_size))
     skeleton_blur = gaussian(dilated_skeleton, gaussian_size)
@@ -460,15 +502,15 @@ def make_skeleton_blur_image(
 
     return skeleton_blur
 
-#remove as soon as 
+
+# remove as soon as
 def local_normalized_distance(
-    image: np.ndarray,  
+    image: np.ndarray,
     max_ball_radius: int = 30,
 ) -> np.ndarray:
-
     """
     Compute normalized distance transform for a binary image.
-    
+
     Parameters
     ----------
     image : np.ndarray
@@ -476,13 +518,12 @@ def local_normalized_distance(
     max_ball_radius : int
         Maximum radius of the ball used for maximum filtering.
         Default is 30.
-        
+
     Returns
     -------
     np.ndarray
         Array of same shape as input image, containing normalized distance values.
-    """        
-
+    """
     image = np.asarray(image)
     binary = image > 0
     labeled, num_labels = label(binary)
@@ -504,13 +545,13 @@ def local_normalized_distance(
     return normalized_distance
 
 
-
 def local_normalized_distance_gpu(
     image: np.ndarray,
     max_ball_radius: int = 30,
 ) -> np.ndarray:
     """
     Compute normalized distance transform for a binary image on the GPU using CuPy.
+
     Parameters
     ----------
     image : np.ndarray
@@ -518,6 +559,7 @@ def local_normalized_distance_gpu(
     max_ball_radius : int
         Maximum radius for the structuring element used in the maximum filter.
         Default is 30.
+
     Returns
     -------
     np.ndarray
@@ -525,7 +567,8 @@ def local_normalized_distance_gpu(
     """
     import cupy as cp
     from cupyx.scipy.ndimage import distance_transform_edt as distance_transform_edt_gpu
-    from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu, label
+    from cupyx.scipy.ndimage import label
+    from cupyx.scipy.ndimage import maximum_filter as maximum_filter_gpu
 
     image = cp.asarray(image)  # move to GPU
     binary = image > 0
@@ -548,12 +591,9 @@ def local_normalized_distance_gpu(
     return cp.asnumpy(normalized_distance)
 
 
-
-
-def generate_toy_graph_symmetric_branch_angle(num_nodes, angle = 72, edge_length = 20):
+def generate_toy_graph_symmetric_branch_angle(num_nodes, angle=72, edge_length=20):
     """Generate a toy skeleton graph with a symmetric branch angle.
-    
-    
+
     Parameters
     ----------
     num_nodes : int
@@ -564,9 +604,8 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle = 72, edge_length
     edge_length : int
         The length of the start edge in the graph. Each generation shrinks by 80%.
         Default is 20.
-    
-    """
 
+    """
     # Create a directed graph
     graph = nx.DiGraph()
 
@@ -677,7 +716,9 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle = 72, edge_length
                 )
                 new_parents.append(i)
                 i += 1
-            edge_length = int(0.8 * edge_length)  # Decrease edge length for subsequent branches
+            edge_length = int(
+                0.8 * edge_length
+            )  # Decrease edge length for subsequent branches
         parent_nodes = new_parents  # Update parent nodes for the next iteration
 
     # Set node attributes for the graph
@@ -689,98 +730,115 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle = 72, edge_length
     )
     return skeleton_graph
 
-def add_rotation_to_tree(tree:nx.DiGraph):
+
+def add_rotation_to_tree(tree: nx.DiGraph):
     """Adds a random rotation between -90 and 90 degree to each level of the tree.
 
     Each node needs to contain the 3D positional coordinates (array with shape (3,))
     in attribute NODE_COORDINATE_KEY.
     Rotation will happen along axis 1 (y).
 
-    NOTE: This function does not rotate edge coordinates. 
+    NOTE: This function does not rotate edge coordinates.
     Might implement this in the future.
 
     Parameters
     ----------
-        tree (nx.DiGraph): The tree to rotate.
-            Eg. to graph from generate_toy_graph_symmetric_branch_angle.
+    tree: nx.DiGraph
+        The tree to rotate.
+        Eg. to graph from generate_toy_graph_symmetric_branch_angle.
 
     """
-    in_edges =list(tree.in_edges())
+    in_edges = list(tree.in_edges())
     in_edges_flatt = [node for edge in in_edges for node in edge]
-    for nodes,degree in tree.degree():
-        rot_degree = np.radians(random.sample(list(np.linspace(-90,90,10)),1))[0]
-        updated_postions = {}
+    for nodes, degree in tree.degree():
+        rot_degree = np.radians(random.sample(list(np.linspace(-90, 90, 10)), 1))[0]
+        updated_positions = {}
         if degree == 3:
             if nodes in in_edges_flatt:
-                sub_tree = tree.subgraph(nx.dfs_tree(tree, source = nodes).nodes())
+                sub_tree = tree.subgraph(nx.dfs_tree(tree, source=nodes).nodes())
 
                 root = np.array(
-                    dict(sub_tree.nodes(data = True))[nodes][NODE_COORDINATE_KEY]
-                    )
+                    dict(sub_tree.nodes(data=True))[nodes][NODE_COORDINATE_KEY]
+                )
 
                 for node in sub_tree.nodes():
-                    p = tree.nodes(data =NODE_COORDINATE_KEY)[node]
+                    p = tree.nodes(data=NODE_COORDINATE_KEY)[node]
                     p = p - root
 
-                    R_matrix = np.matrix(([np.cos(rot_degree),0,np.sin(rot_degree)],
-                                          [0,1,0],
-                                          [-np.sin(rot_degree),0,np.cos(rot_degree)]))
-                    r = R.from_matrix(R_matrix) 
+                    R_matrix = np.matrix(
+                        (
+                            [np.cos(rot_degree), 0, np.sin(rot_degree)],
+                            [0, 1, 0],
+                            [-np.sin(rot_degree), 0, np.cos(rot_degree)],
+                        )
+                    )
+                    r = R.from_matrix(R_matrix)
                     p_rot = r.apply(p)
                     p_rot = p_rot + root
-                    updated_postions[node] = p_rot.flatten()
+                    updated_positions[node] = p_rot.flatten()
 
-            nx.set_node_attributes(tree, updated_postions, name = NODE_COORDINATE_KEY)
+            nx.set_node_attributes(tree, updated_positions, name=NODE_COORDINATE_KEY)
 
-    #avoid negative coordinates
-    #move to positive coordinats
-    pos_dict  = nx.get_node_attributes(tree, NODE_COORDINATE_KEY)
-    pos_values =  np.array(list(pos_dict.values()))
+    # avoid negative coordinates
+    # move to positive coordinates
+    pos_dict = nx.get_node_attributes(tree, NODE_COORDINATE_KEY)
+    pos_values = np.array(list(pos_dict.values()))
 
-    x_shift  = np.abs(np.min(pos_values[:,0])) +10
-    y_shift  = np.abs(np.min(pos_values[:,1])) +30
-    z_shift  = np.abs(np.min(pos_values[:,2])) +10
+    x_shift = np.abs(np.min(pos_values[:, 0])) + 10
+    y_shift = np.abs(np.min(pos_values[:, 1])) + 30
+    z_shift = np.abs(np.min(pos_values[:, 2])) + 10
 
-
-
-
-    pos = {k:v + np.array([x_shift, y_shift, z_shift]) for k, v in pos_dict.items()}
+    pos = {k: v + np.array([x_shift, y_shift, z_shift]) for k, v in pos_dict.items()}
     nx.set_node_attributes(tree, pos, NODE_COORDINATE_KEY)
 
-def augment_tree(tree:nx.DiGraph):
+
+def augment_tree(tree: nx.DiGraph):
     """
     Augment a tree by rotating it along the trachea.
+
     Each node needs to contain the 3D positional coordinates (array with shape (3,))
 
-    NOTE: This function does not rotate edge coordinates. 
+    NOTE: This function does not rotate edge coordinates.
     Might implement this in the future.
 
     Parameters
     ----------
-        tree : nx.DiGraph
-            The tree to augment.
-            Eg. to graph from generate_toy_graph_symmetric_branch_angle.
+    tree : nx.DiGraph
+        The tree to augment.
+        Eg. to graph from generate_toy_graph_symmetric_branch_angle.
 
     """
-    #Rotation matrices
-    rot_degree = np.radians(random.sample(list(np.linspace(-30,30,60)),3))
-    R_matrix_x = np.matrix(([1,0,0],
-                            [0,np.cos(rot_degree[0]),-np.sin(rot_degree[0])],
-                            [0,np.sin(rot_degree[0]),np.cos(rot_degree[0])]))
+    # Rotation matrices
+    rot_degree = np.radians(random.sample(list(np.linspace(-30, 30, 60)), 3))
+    R_matrix_x = np.matrix(
+        (
+            [1, 0, 0],
+            [0, np.cos(rot_degree[0]), -np.sin(rot_degree[0])],
+            [0, np.sin(rot_degree[0]), np.cos(rot_degree[0])],
+        )
+    )
 
-    R_matrix_y = np.matrix(([np.cos(rot_degree[1]),0,np.sin(rot_degree[1])],
-                            [0,1,0],
-                            [-np.sin(rot_degree[1]),0,np.cos(rot_degree[1])]))
+    R_matrix_y = np.matrix(
+        (
+            [np.cos(rot_degree[1]), 0, np.sin(rot_degree[1])],
+            [0, 1, 0],
+            [-np.sin(rot_degree[1]), 0, np.cos(rot_degree[1])],
+        )
+    )
 
-    R_matrix_z = np.matrix(([np.cos(rot_degree[2]),-np.sin(rot_degree[2]),0],
-                            [np.sin(rot_degree[2]),np.cos(rot_degree[2]),0],
-                            [0,0,1]))
-    r_x =R.from_matrix(R_matrix_x) 
+    R_matrix_z = np.matrix(
+        (
+            [np.cos(rot_degree[2]), -np.sin(rot_degree[2]), 0],
+            [np.sin(rot_degree[2]), np.cos(rot_degree[2]), 0],
+            [0, 0, 1],
+        )
+    )
+    r_x = R.from_matrix(R_matrix_x)
     r_y = R.from_matrix(R_matrix_y)
-    r_z =R.from_matrix(R_matrix_z)
+    r_z = R.from_matrix(R_matrix_z)
     print(rot_degree)
 
-    #Augment tree by rotating it along the trachea
+    # Augment tree by rotating it along the trachea
     pos = nx.get_node_attributes(tree, NODE_COORDINATE_KEY)
 
     update_pos = {}
@@ -788,10 +846,9 @@ def augment_tree(tree:nx.DiGraph):
         root = pos[0]
         p = node_pos - root
 
-        p_rot =r_x.apply(p)
-        p_rot =r_y.apply(p_rot)
-        p_rot =r_z.apply(p_rot)
+        p_rot = r_x.apply(p)
+        p_rot = r_y.apply(p_rot)
+        p_rot = r_z.apply(p_rot)
         p_rot = p_rot + root
         update_pos[node] = p_rot.flatten()
-    nx.set_node_attributes(tree, update_pos, name = NODE_COORDINATE_KEY)
-
+    nx.set_node_attributes(tree, update_pos, name=NODE_COORDINATE_KEY)

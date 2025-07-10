@@ -1,5 +1,7 @@
-import numpy as np
 from copy import deepcopy
+
+import numpy as np
+
 from skeleplex.graph.constants import (
     NODE_COORDINATE_KEY,
 )
