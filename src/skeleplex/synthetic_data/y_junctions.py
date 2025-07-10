@@ -10,6 +10,7 @@ from skeleplex.synthetic_data.utils import (
     add_noise_to_image_surface,
     crop_to_content,
     draw_ellipsoid_at_point,
+    draw_elliptic_cylinder_segment,
     draw_line_segment_wiggle,
     draw_wiggly_cylinder_3d,
     make_skeleton_blur_image,
@@ -27,6 +28,7 @@ def generate_y_junction(
     d2_angle,
     wiggle_factor=0.022,
     noise_magnitude=5,
+    ellipse_ratio: int | None = None,
     use_gpu=True,
 ):
     """Generate a Y-junction structure in a 3D skeleton image.
@@ -55,6 +57,10 @@ def generate_y_junction(
     noise_magnitude : float, optional
         Magnitude of noise to add to the surface of the branches.
         Default is 5.
+    ellipse_ratio : float, optional
+        Ratio of the radii of the elliptic cylinder segments.
+        If None, the branches will be cylindrical.
+        Default is None.
     use_gpu : bool, optional
         Whether to use GPU acceleration for distance transform computation.
         Default is True.
@@ -123,27 +129,34 @@ def generate_y_junction(
             line[0], line[1], skeleton, wiggle_factor=wiggle_factor, axis=axis
         )
         # Draw the cylinders for the branches
-        draw_wiggly_cylinder_3d(
-            branch,
-            line[0],
-            line[1],
-            radius=radius,
-            wiggle_factor=wiggle_factor,
-            axis=axis,
-        )
+        if not ellipse_ratio:
+            draw_wiggly_cylinder_3d(
+                branch,
+                line[0],
+                line[1],
+                radius=radius,
+                wiggle_factor=wiggle_factor,
+                axis=axis,
+            )
+        else:
+            # Draw an elliptic cylinder segment
+            draw_elliptic_cylinder_segment(
+                branch, line[0], line[1], rx=radius, ry=radius / ellipse_ratio
+            )
 
     # dilute the tips
-    for i, point in enumerate([origin, p1, d1, d2]):
-        r_tip = [radius_parent, radius_parent, radius_d1, radius_d2][i]
-        draw_ellipsoid_at_point(
-            branch,
-            point,
-            radii=(
-                r_tip * np.random.uniform(1, 1.1),
-                r_tip * np.random.uniform(1, 1.1),
-                r_tip * np.random.uniform(1, 1.1),
-            ),
-        )
+    if not ellipse_ratio:
+        for i, point in enumerate([origin, p1, d1, d2]):
+            r_tip = [radius_parent, radius_parent, radius_d1, radius_d2][i]
+            draw_ellipsoid_at_point(
+                branch,
+                point,
+                radii=(
+                    r_tip * np.random.uniform(1, 1.1),
+                    r_tip * np.random.uniform(1, 1.1),
+                    r_tip * np.random.uniform(1, 1.1),
+                ),
+            )
 
     branch_noisey = add_noise_to_image_surface(branch, noise_magnitude=noise_magnitude)
 
@@ -177,7 +190,7 @@ def generate_y_junction(
     return skeletonization_target, distance_field
 
 
-def random_parameters(
+def random_parameters_y_junctions(
     length_parent_range=(80, 120),
     length_d1_range=(70, 100),
     length_d2_range=(70, 100),
@@ -188,6 +201,7 @@ def random_parameters(
     d2_angle_range=(20, 100),
     wiggle_factor_range=(0.01, 0.03),
     noise_magnitude_range=(8, 25),
+    ellipse_ratio_range=(1.1, 1.5),
     use_gpu=False,
 ):
     """Generate random parameters for Y-junction generation."""
@@ -201,6 +215,9 @@ def random_parameters(
     d2_angle = np.random.uniform(*d2_angle_range)
     wiggle_factor = np.random.uniform(*wiggle_factor_range)
     noise_magnitude = np.random.uniform(*noise_magnitude_range)
+    ellipse_ratio = (
+        np.random.uniform(*ellipse_ratio_range) if np.random.rand() > 0.5 else None
+    )
     return (
         length_parent,
         length_d1,
@@ -212,5 +229,6 @@ def random_parameters(
         d2_angle,
         wiggle_factor,
         noise_magnitude,
+        ellipse_ratio,
         use_gpu,
     )
