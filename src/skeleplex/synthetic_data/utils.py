@@ -836,7 +836,6 @@ def augment_tree(tree: nx.DiGraph):
     r_x = R.from_matrix(R_matrix_x)
     r_y = R.from_matrix(R_matrix_y)
     r_z = R.from_matrix(R_matrix_z)
-    print(rot_degree)
 
     # Augment tree by rotating it along the trachea
     pos = nx.get_node_attributes(tree, NODE_COORDINATE_KEY)
