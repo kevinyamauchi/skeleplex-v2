@@ -1,6 +1,4 @@
-import random  # noqa: D100
-
-import dask.array as da
+import dask.array as da  # noqa: D100
 import networkx as nx
 import numpy as np
 
@@ -28,13 +26,14 @@ from skeleplex.synthetic_data.utils import (
 
 
 def generate_synthetic_fractal_tree(
-    num_nodes=19,
-    edge_length=100,
-    branch_angle=45,
-    wiggle_factor=0.01,
-    noise_magnitude=5,
-    ellipse_ratio=None,
-    use_gpu=True,
+    num_nodes: int = 19,
+    edge_length: int = 100,
+    branch_angle: float = 45,
+    wiggle_factor: float = 0.01,
+    noise_magnitude: float = 5,
+    ellipse_ratio: float | None = None,
+    use_gpu: bool = True,
+    seed: int = 42,
 ):
     """Generate a fractal tree structure in a 3D skeleton image.
 
@@ -61,7 +60,11 @@ def generate_synthetic_fractal_tree(
     use_gpu : bool, optional
         Whether to use GPU acceleration for distance transform computation.
         Default is True.
+    seed : int, optional
+        Seed for random number generation.
+        Default is 42.
     """
+    seed_gen = np.random.default_rng(seed)
     # build tree
     g = generate_toy_graph_symmetric_branch_angle(
         num_nodes=num_nodes, angle=branch_angle, edge_length=edge_length
@@ -105,7 +108,7 @@ def generate_synthetic_fractal_tree(
     pos_dict = nx.get_node_attributes(g.graph, NODE_COORDINATE_KEY)
 
     # Fill in the structures
-    axis = np.random.randint(0, 3)  # Randomly choose an axis for wiggle
+    axis = seed_gen.integers(0, 3)  # Randomly choose an axis for wiggle
     for i, (u, v) in enumerate(g.graph.edges()):
         a = pos_dict[u]
         b = pos_dict[v]
@@ -149,9 +152,9 @@ def generate_synthetic_fractal_tree(
                 branch_img,
                 pos,
                 radii=(
-                    radius * np.random.uniform(1, 1.2),
-                    radius * np.random.uniform(1, 2),
-                    radius * np.random.uniform(1, 2),
+                    radius * seed_gen.uniform(1, 1.2),
+                    radius * seed_gen.uniform(1, 2),
+                    radius * seed_gen.uniform(1, 2),
                 ),
             )
 
@@ -183,14 +186,26 @@ def generate_synthetic_fractal_tree(
     return skel_target, distance_field
 
 
-def generate_random_parameters_for_fractal_tree(use_gpu=True):
+def generate_random_parameters_for_fractal_tree(
+    num_nodes_range: tuple[int, int] = (15, 33),
+    edge_length_factor: tuple[int, int] = (4, 7),
+    branch_angle_range: tuple[float, float] = (30, 90),
+    wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
+    noise_magnitude_range: tuple[float, float] = (5, 15),
+    ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
+    use_gpu=True,
+    seed: int = 42,
+):
     """Generate random parameters for fractal tree generation."""
-    num_nodes = random.randrange(15, 33, 2)
-    edge_length = num_nodes * np.random.randint(4, 7)
-    branch_angle = np.random.uniform(30, 90)
-    wiggle_factor = np.random.uniform(0.01, 0.03)
-    noise_magnitude = np.random.uniform(5, 15)
-    ellipse_ratio = np.random.uniform(1.1, 1.5) if np.random.rand() > 0.5 else None
+    seed_gen = np.random.default_rng(seed)
+    num_nodes = seed_gen.choice(np.arange(*num_nodes_range, 2))
+    edge_length = num_nodes * seed_gen.integers(*edge_length_factor)
+    branch_angle = seed_gen.uniform(*branch_angle_range)
+    wiggle_factor = seed_gen.uniform(*wiggle_factor_range)
+    noise_magnitude = seed_gen.uniform(*noise_magnitude_range)
+    ellipse_ratio = (
+        seed_gen.uniform(*ellipse_ratio_range) if seed_gen.random() > 0.5 else None
+    )
     return (
         num_nodes,
         edge_length,
@@ -199,4 +214,5 @@ def generate_random_parameters_for_fractal_tree(use_gpu=True):
         noise_magnitude,
         ellipse_ratio,
         use_gpu,
+        seed,
     )

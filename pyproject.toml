@@ -50,6 +50,7 @@ dependencies = [
     "rtree>=1.3.0",
     "dask>=2025.5.1",
     "zarr >=3.0.8",
+    "pysdf>=0.1.9",
 
 ]
 

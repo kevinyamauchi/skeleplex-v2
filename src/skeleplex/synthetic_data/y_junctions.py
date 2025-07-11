@@ -18,18 +18,19 @@ from skeleplex.synthetic_data.utils import (
 
 
 def generate_y_junction(
-    length_parent,
-    length_d1,
-    length_d2,
-    radius_parent,
-    radius_d1,
-    radius_d2,
-    d1_angle,
-    d2_angle,
-    wiggle_factor=0.022,
-    noise_magnitude=5,
-    ellipse_ratio: int | None = None,
-    use_gpu=True,
+    length_parent: int,
+    length_d1: int,
+    length_d2: int,
+    radius_parent: int,
+    radius_d1: int,
+    radius_d2: int,
+    d1_angle: float,
+    d2_angle: float,
+    wiggle_factor: float = 0.022,
+    noise_magnitude: float = 5,
+    ellipse_ratio: float | None = None,
+    use_gpu: bool = True,
+    seed: int = 42,
 ):
     """Generate a Y-junction structure in a 3D skeleton image.
 
@@ -64,12 +65,17 @@ def generate_y_junction(
     use_gpu : bool, optional
         Whether to use GPU acceleration for distance transform computation.
         Default is True.
+    seed : int, optional
+        Seed for random number generation.
+        Default is 42.
 
     Returns
     -------
     skeleton : np.ndarray
         A 3D numpy array representing the generated Y-junction structure.
     """
+    seed_gen = np.random.default_rng(seed)
+    # Initialize the transformation matrices for the angles
     theta = np.radians(d1_angle)
     iota = np.radians(d2_angle)
     M = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
@@ -107,7 +113,7 @@ def generate_y_junction(
     d2 = np.array([d2[0], d2[1], skeleton.shape[2] // 2])
 
     # rotate d2 around y axis
-    d2_angle_z = np.radians(np.random.uniform(-90, 90))
+    d2_angle_z = np.radians(seed_gen.uniform(-90, 90))
     d2_pivot = d2 - p1
     rotation_matrix = np.array(
         [
@@ -120,7 +126,7 @@ def generate_y_junction(
     d2 = d2 + p1
 
     # get wiggle axis
-    axis = np.random.randint(0, 3)
+    axis = seed_gen.integers(0, 3)
 
     for i, line in enumerate([[origin, p1], [p1, d1], [p1, d2]]):
         radius = [radius_parent, radius_d1, radius_d2][i]
@@ -152,9 +158,9 @@ def generate_y_junction(
                 branch,
                 point,
                 radii=(
-                    r_tip * np.random.uniform(1, 1.1),
-                    r_tip * np.random.uniform(1, 1.1),
-                    r_tip * np.random.uniform(1, 1.1),
+                    r_tip * seed_gen.uniform(1, 1.1),
+                    r_tip * seed_gen.uniform(1, 1.1),
+                    r_tip * seed_gen.uniform(1, 1.1),
                 ),
             )
 
@@ -191,32 +197,35 @@ def generate_y_junction(
 
 
 def random_parameters_y_junctions(
-    length_parent_range=(80, 120),
-    length_d1_range=(70, 100),
-    length_d2_range=(70, 100),
-    radius_parent_range=(60, 90),
-    radius_d1_range=(30, 55),
-    radius_d2_range=(30, 55),
-    d1_angle_range=(-90, 30),
-    d2_angle_range=(20, 100),
-    wiggle_factor_range=(0.01, 0.03),
-    noise_magnitude_range=(8, 25),
-    ellipse_ratio_range=(1.1, 1.5),
-    use_gpu=False,
+    length_parent_range: tuple[int, int] = (80, 120),
+    length_d1_range: tuple[int, int] = (70, 100),
+    length_d2_range: tuple[int, int] = (70, 100),
+    radius_parent_range: tuple[int, int] = (60, 90),
+    radius_d1_range: tuple[int, int] = (30, 55),
+    radius_d2_range: tuple[int, int] = (30, 55),
+    d1_angle_range: tuple[int, int] = (-90, 30),
+    d2_angle_range: tuple[int, int] = (20, 100),
+    wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
+    noise_magnitude_range: tuple[float, float] = (8, 25),
+    ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
+    use_gpu: bool = False,
+    seed: int = 42,
 ):
     """Generate random parameters for Y-junction generation."""
-    length_parent = np.random.randint(*length_parent_range)
-    length_d1 = np.random.randint(*length_d1_range)
-    length_d2 = np.random.randint(*length_d2_range)
-    radius_parent = np.random.randint(*radius_parent_range)
-    radius_d1 = np.random.randint(*radius_d1_range)
-    radius_d2 = np.random.randint(*radius_d2_range)
-    d1_angle = np.random.uniform(*d1_angle_range)
-    d2_angle = np.random.uniform(*d2_angle_range)
-    wiggle_factor = np.random.uniform(*wiggle_factor_range)
-    noise_magnitude = np.random.uniform(*noise_magnitude_range)
+    seed_gen = np.random.default_rng(seed)
+    length_parent = seed_gen.integers(*length_parent_range)
+    length_d1 = seed_gen.integers(*length_d1_range)
+    length_d2 = seed_gen.integers(*length_d2_range)
+    radius_parent = seed_gen.integers(*radius_parent_range)
+    radius_d1 = seed_gen.integers(*radius_d1_range)
+    radius_d2 = seed_gen.integers(*radius_d2_range)
+    d1_angle = seed_gen.uniform(*d1_angle_range)
+    d2_angle = seed_gen.uniform(*d2_angle_range)
+    wiggle_factor = seed_gen.uniform(*wiggle_factor_range)
+    noise_magnitude = seed_gen.uniform(*noise_magnitude_range)
+    # make half of them elliptic
     ellipse_ratio = (
-        np.random.uniform(*ellipse_ratio_range) if np.random.rand() > 0.5 else None
+        seed_gen.uniform(*ellipse_ratio_range) if seed_gen.random() > 0.5 else None
     )
     return (
         length_parent,
@@ -231,4 +240,5 @@ def random_parameters_y_junctions(
         noise_magnitude,
         ellipse_ratio,
         use_gpu,
+        seed,
     )
