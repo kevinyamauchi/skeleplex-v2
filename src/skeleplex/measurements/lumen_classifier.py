@@ -17,7 +17,7 @@ from torchvision import models
 from monai.transforms import EnsureType
 from PIL import Image
 from PyQt5.QtWidgets import QFileDialog, QLabel, QPushButton, QVBoxLayout, QWidget
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import ResNet50_Weights
 
 
 from torchvision.transforms import (
@@ -436,8 +436,8 @@ class ResNet3ClassClassifier(pl.LightningModule):
     def __init__(self, num_classes=3, pretrained=False):
         super().__init__()
         # Load pre-trained ResNet
-        
-        self.resnet = models.resnet50(weights = None)
+
+        self.resnet = models.resnet50(weights=None)
         if pretrained:
             weights = ResNet50_Weights.DEFAULT
             self.resnet = models.resnet50(weights=weights)

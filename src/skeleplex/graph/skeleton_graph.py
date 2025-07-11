@@ -243,6 +243,7 @@ def sample_slices_for_edge(
     approx,
 ):
     """Helper function for parallel execution.
+
     This function is used to sample slices from a spline in a skeleton graph.
 
     Parameters
