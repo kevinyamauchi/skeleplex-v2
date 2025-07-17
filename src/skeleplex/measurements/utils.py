@@ -24,6 +24,35 @@ def unit_vector(vector):
     return np.squeeze(np.asarray(vector / np.linalg.norm(vector)))
 
 
+def grey2rgb(image):
+    """Convert a grayscale image to RGB by stacking the channels.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        A 2D numpy array representing the grayscale image.
+    """
+    image = np.stack([image] * 3, axis=-1)
+    image = (image - image.min()) / (image.max() - image.min()) * 255
+    return image.astype(np.uint8)
+
+
+def radius_from_area(area):
+    """Calculate the radius from the area of a circle.
+
+    Parameters
+    ----------
+    area : float
+        The area of the circle.
+
+    Returns
+    -------
+    radius : float
+        The radius of the circle.
+    """
+    return np.sqrt(area / np.pi)
+
+
 def get_normal_of_plane(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray):
     """Get the normal vector of a plane defined by three points.
 

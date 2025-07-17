@@ -5,6 +5,8 @@ import logging
 import numpy as np
 from app_model import Application
 from app_model.types import Action, KeyBindingRule, KeyCode, KeyMod, MenuRule
+from cellier.models.data_stores import PointsMemoryStore
+from cellier.models.visuals import PointsUniformAppearance, PointsVisual
 
 from skeleplex.app._constants import CommandId, MenuId
 from skeleplex.app._curate import CurationManager
@@ -16,9 +18,6 @@ from skeleplex.app._data import (
 from skeleplex.app._viewer_controller import ViewerController
 from skeleplex.app.actions import ACTIONS
 from skeleplex.app.qt import MainWindow
-
-from cellier.models.data_stores import PointsMemoryStore
-from cellier.models.visuals import PointsUniformAppearance, PointsVisual
 
 log = logging.getLogger(__name__)
 
@@ -361,18 +360,18 @@ class SkelePlexApp(Application):
             self._viewer.main_canvas.remove_skeleton_node_callback(
                 callback=self.data._on_node_selection_click,
             )
-    def add_points(self,
-                   point_coordinates: np.ndarray = np.array([0,0,0],
-                                                              dtype=np.float32)
-                   ) -> tuple[PointsVisual, PointsMemoryStore]:
+
+    def add_points(
+        self, point_coordinates: np.ndarray
+    ) -> tuple[PointsVisual, PointsMemoryStore]:
         """Add points to the viewer.
-        
+
         Parameters
         ----------
         point_coordinates : np.ndarray, optional
             The coordinates of the points to add, by default np.array([0,0,0],
                                                                 dtype=np.float32)
-        
+
         Returns
         -------
         tuple[PointsVisual, PointsMemoryStore]
@@ -380,6 +379,10 @@ class SkelePlexApp(Application):
         """
         # create a list of points to add
         # note these must be Float32
+        if point_coordinates is None or len(point_coordinates) == 0:
+            point_coordinates = np.array([[0, 0, 0]], dtype=np.float32)
+        else:
+            point_coordinates = np.asarray(point_coordinates, dtype=np.float32)
 
         # make the data store for the points
         new_points_store = PointsMemoryStore(
@@ -407,4 +410,3 @@ class SkelePlexApp(Application):
         # reslice the viewer to update the display
         self._viewer._backend.reslice_all()
         return points_visual, new_points_store
-

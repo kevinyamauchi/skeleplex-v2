@@ -639,7 +639,7 @@ class ChangeBranchColorWidget:
 
     def _update_colorbar(self, attribute_name, vmin, vmax):
         """Update the colorbar based on the selected edge attribute and its value range.
-        
+
         This method generates a colorbar image and updates the QLabel to display it.
 
         Parameters
