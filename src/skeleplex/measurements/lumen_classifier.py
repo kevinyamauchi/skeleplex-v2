@@ -16,7 +16,7 @@ from torchvision import models
 
 from monai.transforms import EnsureType
 from PIL import Image
-from PyQt5.QtWidgets import QFileDialog, QLabel, QPushButton, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QFileDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 from torchvision.models import ResNet50_Weights
 
 
