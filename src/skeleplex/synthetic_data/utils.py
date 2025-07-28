@@ -4,7 +4,14 @@ import networkx as nx
 import numba
 import numpy as np
 import trimesh
-from pysdf import SDF
+
+try:
+    from igl import signed_distance
+except ImportError as err:
+    raise ImportError(
+        'Please install the "synthetic_data" extra'
+        "to use this functionality: pip install skeleplex-v2[synthetic_data]"
+    ) from err
 from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
 from skimage.measure import marching_cubes
@@ -46,13 +53,20 @@ def add_noise_to_image_surface(image, noise_magnitude=15):
 
     # Smooth
     mesh = trimesh.smoothing.filter_taubin(mesh, lamb=0.7, nu=-0.3, iterations=10)
+    mesh.fix_normals()
 
     x, y, z = np.indices(image.shape)
     coords = np.stack((x, y, z), axis=-1)  # shape:
     coords = coords.reshape(-1, 3)  # Flatten to (N, 3)
 
-    sdgf = SDF(mesh.vertices, mesh.faces)
-    noisey_image = sdgf.contains(coords).reshape(image.shape)
+    signed_distances, _, _, _ = signed_distance(
+        coords, np.array(mesh.vertices), np.array(mesh.faces), sign_type=1
+    )
+
+    print(np.min(signed_distances), np.max(signed_distances))
+    noisey_image = signed_distances.reshape(image.shape).copy()
+    noisey_image[noisey_image >= 0] = 0  # Set inside points to 1
+    noisey_image[noisey_image < 0] = 1
 
     return noisey_image.astype(np.uint8)
 

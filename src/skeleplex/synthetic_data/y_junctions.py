@@ -29,6 +29,7 @@ def generate_y_junction(
     wiggle_factor: float = 0.022,
     noise_magnitude: float = 5,
     ellipse_ratio: float | None = None,
+    dilation_size: int = 4,
     use_gpu: bool = True,
     seed: int = 42,
 ):
@@ -62,6 +63,9 @@ def generate_y_junction(
         Ratio of the radii of the elliptic cylinder segments.
         If None, the branches will be cylindrical.
         Default is None.
+    dilation_size : int, optional
+        Size of the dilation applied to the skeleton image.
+        Default is 4.
     use_gpu : bool, optional
         Whether to use GPU acceleration for distance transform computation.
         Default is True.
@@ -166,8 +170,6 @@ def generate_y_junction(
 
     branch_noisey = add_noise_to_image_surface(branch, noise_magnitude=noise_magnitude)
 
-    branch_noisey = add_noise_to_image_surface(branch, noise_magnitude=noise_magnitude)
-
     # crop to content
     branch_noisey, skeleton = crop_to_content(branch_noisey, skeleton)
 
@@ -186,7 +188,7 @@ def generate_y_junction(
 
     skeletonization_blur = make_skeleton_blur_image(
         skeleton,
-        dilation_size=8,
+        dilation_size=dilation_size,
         gaussian_size=1.5,
     )
     skeletonization_target = skeletonization_blur > 0.7
@@ -208,6 +210,7 @@ def random_parameters_y_junctions(
     wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
     noise_magnitude_range: tuple[float, float] = (8, 25),
     ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
+    dilation_size: int = 4,
     use_gpu: bool = False,
     seed: int = 42,
 ):
@@ -239,6 +242,7 @@ def random_parameters_y_junctions(
         wiggle_factor,
         noise_magnitude,
         ellipse_ratio,
+        dilation_size,
         use_gpu,
         seed,
     )
