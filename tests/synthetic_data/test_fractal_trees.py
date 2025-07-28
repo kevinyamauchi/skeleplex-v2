@@ -6,8 +6,8 @@ from skeleplex.synthetic_data.fractal_trees import (
 
 def test_generate_fractal_tree():
     params = generate_random_parameters_for_fractal_tree(
-        num_nodes_range=(3, 5),
-        edge_length_factor=(4, 5),
+        num_nodes_range=(5, 6),
+        edge_length_factor=(5, 6),
         branch_angle_range=(30, 90),
         wiggle_factor_range=(0.01, 0.03),
         noise_magnitude_range=(8, 25),
