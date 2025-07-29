@@ -1,12 +1,7 @@
 import dask.array as da  # noqa: D100
 import numpy as np
 
-from skeleplex.measurements.utils import unit_vector
-from skeleplex.skeleton.distance_field import (
-    local_normalized_distance,
-    local_normalized_distance_gpu,
-)
-from skeleplex.synthetic_data.utils import (
+from skeleplex.data.utils import (
     add_noise_to_image_surface,
     crop_to_content,
     draw_ellipsoid_at_point,
@@ -14,6 +9,11 @@ from skeleplex.synthetic_data.utils import (
     draw_line_segment_wiggle,
     draw_wiggly_cylinder_3d,
     make_skeleton_blur_image,
+)
+from skeleplex.measurements.utils import unit_vector
+from skeleplex.skeleton.distance_field import (
+    local_normalized_distance,
+    local_normalized_distance_gpu,
 )
 
 

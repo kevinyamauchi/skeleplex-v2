@@ -9,7 +9,7 @@ try:
     from igl import signed_distance
 except ImportError as err:
     raise ImportError(
-        'Please install the "synthetic_data" extra'
+        'Please install the "synthetic_data" extra '
         "to use this functionality: pip install skeleplex-v2[synthetic_data]"
     ) from err
 from scipy.spatial.transform import Rotation as R

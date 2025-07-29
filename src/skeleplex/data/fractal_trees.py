@@ -2,16 +2,7 @@ import dask.array as da  # noqa: D100
 import networkx as nx
 import numpy as np
 
-from skeleplex.graph.constants import (
-    LENGTH_KEY,
-    NODE_COORDINATE_KEY,
-)
-from skeleplex.measurements.graph_properties import compute_branch_length, compute_level
-from skeleplex.skeleton.distance_field import (
-    local_normalized_distance,
-    local_normalized_distance_gpu,
-)
-from skeleplex.synthetic_data.utils import (
+from skeleplex.data.utils import (
     add_noise_to_image_surface,
     add_rotation_to_tree,
     augment_tree,
@@ -22,6 +13,15 @@ from skeleplex.synthetic_data.utils import (
     draw_wiggly_cylinder_3d,
     generate_toy_graph_symmetric_branch_angle,
     make_skeleton_blur_image,
+)
+from skeleplex.graph.constants import (
+    LENGTH_KEY,
+    NODE_COORDINATE_KEY,
+)
+from skeleplex.measurements.graph_properties import compute_branch_length, compute_level
+from skeleplex.skeleton.distance_field import (
+    local_normalized_distance,
+    local_normalized_distance_gpu,
 )
 
 

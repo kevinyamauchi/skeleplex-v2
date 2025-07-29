@@ -1,4 +1,4 @@
-from skeleplex.synthetic_data.fractal_trees import (
+from skeleplex.data.fractal_trees import (
     generate_random_parameters_for_fractal_tree,
     generate_synthetic_fractal_tree,
 )
