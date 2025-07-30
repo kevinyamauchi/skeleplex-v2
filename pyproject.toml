@@ -63,6 +63,10 @@ viz = ["app-model"]
 torch = ["torch", "morphospaces>=0.0.5"]
 #branch measurements requires sam
 branch_measurements = ["sam2>=1.0","torch >=2.6.0"]
+
+#synthetic data generation requires igl
+synthetic_data = ['libigl>=2.6.1']
+
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
 # add anything else you like to have in your dev environment here
@@ -83,7 +87,7 @@ docs = [
 ]
 # all dev dependencies
 dev-all = [
-    "skeleplex-v2[napari,test,viz,cellier,docs,dev]"
+    "skeleplex-v2[napari,test,viz,cellier,branch_measurements,synthetic_data,docs,dev]"
 ]
 
 [project.urls]

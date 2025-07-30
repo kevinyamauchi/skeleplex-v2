@@ -41,7 +41,7 @@ def filter_and_segment_lumen(
     Only the central label of the slice is considered, which is the label at the
     center of the slice. If there is no central label, the slice is dropped.
     If the central label is touching the border of the slice, the slice is dropped.
-    
+
     The lumen is the central "open" part of the slice, which is not
     touching the border, has a low eccentricity and high circularity and is usually
     characterized by a low intensity in the image. If the segmentation only covers the
@@ -52,7 +52,7 @@ def filter_and_segment_lumen(
     ellipse and the length of the major axis. A value close to 0 indicates a circle
     and a value close to 1 indicates a line. Circularity is defined as the ratio
     of the area of the shape to the area of a circle with the same perimeter. A
-    value close to 1 indicates a circle and a value close to 0 indicates a 
+    value close to 1 indicates a circle and a value close to 0 indicates a
     very irregular/bumpy shape.
 
     https://en.wikipedia.org/wiki/Eccentricity_(mathematics)
@@ -64,7 +64,7 @@ def filter_and_segment_lumen(
 
     https://github.com/facebookresearch/sam2/tree/main .
 
-    This will segment the branch and returns different masks, ideally one for the one 
+    This will segment the branch and returns different masks, ideally one for the one
     for the lumen and one for the whole branch. To classify the different masks, a
     ResNet classifier is used, which is trained on the lumen, branches and bad slices.
     The classifier is used to classify the lumen and branches, and the bad slices are
@@ -236,15 +236,14 @@ def filter_and_segment_lumen(
 
 def filter_for_iterative_lumens(data_path, save_path):
     """Filter for iterative lumens across multiple files in parallel.
-    
-    
+
     This function processes HDF5 files in the specified data path, filtering out slices
     that do not contain the iterative lumen label (2). It removes slices that are not
-    part of the iterative lumen by checking if the label 2 is present in the segmentation
-    slices. If a slice does not contain label 2, it checks the neighboring slices to
-    determine if it should be removed. The filtered slices are saved to the specified
-    save path.
-    
+    part of the iterative lumen by checking if the label 2 is present in the
+    segmentation slices. If a slice does not contain label 2, it checks the neighboring
+    slices to determine if it should be removed.
+    The filtered slices are saved to the specified save path.
+
     Parameters
     ----------
     data_path : str
@@ -275,13 +274,13 @@ def filter_file_for_iterative_lumens(args):
     data and removes slices that do not contain label 2, or are not surrounded by
     label 2 slices. The filtered slices are saved to the specified output path.
 
-    
+
     Parameters
     ----------
     args : tuple
         A tuple containing the file name, data path, and save path.
         The tuple should be in the format (file_name, data_path, save_path).
-    
+
     """
     file, data_path, save_path = args
     logger.info(f"Processing {file}")
