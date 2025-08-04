@@ -24,8 +24,8 @@ def test_lazy_graph_construction_tree():
         branch_length=10,
         z_layer=25,
     )
-    image_dilated = apply_dilation_3d(image, dilation_radius=2)
-    skeleton = da.from_array(image_dilated.astype(np.uint8), chunks=(25, 25, 25))
+
+    skeleton = da.from_array(image.astype(np.uint8), chunks=(25, 25, 25))
 
     # compute degrees and remove isolated voxels
     degrees = compute_degrees(skeleton)
@@ -52,3 +52,8 @@ def test_lazy_graph_construction_tree():
         isinstance(coord, np.ndarray) and coord.shape == (3,)
         for coord in node_attrs.values()
     )
+
+    for _, _, attrs in graph.edges(data=True):
+        assert "path" in attrs
+        assert isinstance(attrs["path"], np.ndarray)
+        assert attrs["path"].shape[1] == 3
