@@ -10,11 +10,11 @@ def test_generate_tree_3d():
 
     # Create a basic bifurcating tree
     shape = (100, 100, 100)
-    nodes = 3  # Number of bifurcation levels
+    num_bifurcations = 3  # Number of bifurcation levels
     branch_length = 20
     z_layer = 10
 
-    tree = generate_tree_3d(shape, nodes, branch_length, z_layer)
+    tree = generate_tree_3d(shape, num_bifurcations, branch_length, z_layer)
 
     # Check if output is a NumPy array
     assert isinstance(tree, np.ndarray), "Output should be a NumPy array"
