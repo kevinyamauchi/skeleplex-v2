@@ -19,7 +19,7 @@ def test_local_normalized_distance_tree():
     # create synthetic 3D tree
     image = generate_tree_3d(
         shape=(50, 50, 50),
-        nodes=2,
+        num_bifurcations=2,
         branch_length=10,
         z_layer=25,
     )
@@ -54,7 +54,7 @@ def test_local_normalized_distance_tree_gpu():
     # create synthetic 3D tree
     image = generate_tree_3d(
         shape=(50, 50, 50),
-        nodes=2,
+        num_bifurcations=2,
         branch_length=10,
         z_layer=25,
     )
@@ -82,7 +82,7 @@ def test_local_normalized_distance_dask():
 
     image = generate_tree_3d(
         shape=(50, 50, 50),
-        nodes=2,
+        num_bifurcations=2,
         branch_length=10,
         z_layer=25,
     )
