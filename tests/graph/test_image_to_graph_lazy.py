@@ -4,7 +4,7 @@ import dask.array as da
 import networkx as nx
 import numpy as np
 
-from skeleplex.data.bifurcating_tree import apply_dilation_3d, generate_tree_3d
+from skeleplex.data.bifurcating_tree import generate_tree_3d
 from skeleplex.graph.constants import NODE_COORDINATE_KEY
 from skeleplex.graph.image_to_graph_lazy import (
     assign_unique_ids,
@@ -14,15 +14,16 @@ from skeleplex.graph.image_to_graph_lazy import (
     skeleton_image_to_graph,
 )
 
-
 def test_lazy_graph_construction_tree():
     """Test full lazy image-to-graph pipeline on synthetic tree skeleton."""
 
     image = generate_tree_3d(
-        shape=(50, 50, 50),
-        nodes=2,
-        branch_length=10,
-        z_layer=25,
+        shape=(5, 100, 100),
+        num_bifurcations=2,
+        branch_length=40,
+        z_layer=2,
+        left_angle=60,
+        right_angle=60,
     )
 
     skeleton = da.from_array(image.astype(np.uint8), chunks=(25, 25, 25))
@@ -44,9 +45,9 @@ def test_lazy_graph_construction_tree():
     )
 
     assert isinstance(graph, nx.Graph)
-    assert graph.number_of_nodes() >= 2
-    assert graph.number_of_edges() >= 1
-
+    assert graph.number_of_nodes() == 8
+    assert graph.number_of_edges() == 7
+    
     node_attrs = nx.get_node_attributes(graph, NODE_COORDINATE_KEY)
     assert all(
         isinstance(coord, np.ndarray) and coord.shape == (3,)

@@ -97,7 +97,7 @@ def draw_branch_2d(
 
 def generate_tree_3d(
     shape=(100, 100, 100),
-    nodes=1,
+    num_bifurcations=1,
     branch_length=20,
     z_layer=10,
     left_angle=30,
@@ -111,7 +111,7 @@ def generate_tree_3d(
     ----------
     shape : tuple[int, int, int], optional
         The dimensions of the 3D image, by default (100, 100, 100).
-    nodes : int, optional
+    num_bifurcations : int, optional
         The number of bifurcation levels, by default 1.
     branch_length : int, optional
         The length of the initial trunk, by default 20.
@@ -143,7 +143,7 @@ def generate_tree_3d(
         branch_length,
         angle=0,
         level=0,
-        max_levels=nodes,
+        max_levels=num_bifurcations,
         z_layer=z_layer,
         left_angle=left_angle,
         right_angle=right_angle,
