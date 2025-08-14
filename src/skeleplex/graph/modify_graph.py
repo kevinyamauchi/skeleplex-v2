@@ -269,6 +269,49 @@ def length_pruning(skeleton_graph: SkeletonGraph, length_threshold: int):
                     logger.error(f"Unexpected error while deleting {edge}: {e}")
 
 
+def prune_degree_2_nodes(skeleton_graph: SkeletonGraph):
+    """Remove all degree-2 nodes by merging their incoming and outgoing edges.
+
+    Parameters
+    ----------
+    skeleton_graph : SkeletonGraph
+        The graph to prune.
+
+    """
+    graph = skeleton_graph.graph.copy()
+    origin = skeleton_graph.origin
+
+    nodes_to_merge = []
+    for node in graph.nodes:
+        if node == origin:
+            continue
+        if graph.degree(node) == 2:
+            in_edges = list(graph.in_edges(node))
+            out_edges = list(graph.out_edges(node))
+            if len(in_edges) == 1 and len(out_edges) == 1:
+                u = in_edges[0][0]
+                w = out_edges[0][1]
+                nodes_to_merge.append((u, node, w))
+
+    logger.info(f"Found {len(nodes_to_merge)} degree-2 nodes to merge.")
+
+    for u, v, w in nodes_to_merge:
+        try:
+            merge_edge(skeleton_graph, u, v, w)  # just calling, not assigning
+            logger.info(f"Merged node {v} between {u} and {w}")
+        except Exception as e:
+            logger.warning(f"Could not merge node {v} between {u} and {w}: {e}")
+
+    # reload graph because merge_edge modifies skeleton_graph.graph
+    graph = skeleton_graph.graph
+
+    # remove any isolates
+    graph.remove_nodes_from(list(nx.isolates(graph)))
+
+    # save updated graph back
+    skeleton_graph.graph = graph
+
+
 def split_edge(
     skeleton_graph: SkeletonGraph, edge_to_split_ID: tuple, split_pos: float
 ):
