@@ -5,7 +5,11 @@ import numpy as np
 from skan.csr import Skeleton as SkanSkeleton
 from skan.csr import summarize
 
-from skeleplex.graph.constants import NODE_COORDINATE_KEY
+from skeleplex.graph.constants import (
+    EDGE_COORDINATES_KEY,
+    EDGE_SPLINE_KEY,
+    NODE_COORDINATE_KEY,
+)
 from skeleplex.graph.spline import B3Spline
 
 
@@ -50,6 +54,12 @@ def image_to_graph_skan(
         n_points = len(spline_path)
         if n_points <= max_spline_knots:
             n_spline_knots = n_points - 1
+            if n_spline_knots <= 3:  # min for b3 spline
+                # interpolate with a line to get more knots
+                spline_path = np.linspace(
+                    spline_path[0], spline_path[-1], max_spline_knots
+                )
+                n_spline_knots = max_spline_knots - 1
         else:
             n_spline_knots = max_spline_knots
         spline = B3Spline.from_points(
@@ -60,7 +70,7 @@ def image_to_graph_skan(
         skeleton_graph.add_edge(
             i,
             j,
-            **{"path": spline_path, "spline": spline},
+            **{EDGE_COORDINATES_KEY: spline_path, EDGE_SPLINE_KEY: spline},
         )
 
     # add the node coordinates

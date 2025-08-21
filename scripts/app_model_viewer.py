@@ -6,8 +6,7 @@ import skeleplex
 from skeleplex.app import SkelePlexApp
 from skeleplex.app._data import DataManager, SkeletonDataPaths
 
-graph_path = "e16_skeleplex_v2.json"
-# graph_path = "skeleton_graph_spline.json"
+graph_path = "skeleton_graph_spline.json"
 data_manager = DataManager(file_paths=SkeletonDataPaths(skeleton_graph=graph_path))
 
 app = SkelePlexApp(data=data_manager)
