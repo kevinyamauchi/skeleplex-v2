@@ -162,12 +162,9 @@ def generate_y_junction(
                 branch,
                 point,
                 radii=(
-                    # r_tip * seed_gen.uniform(1.01, 1.3),
-                    # r_tip * seed_gen.uniform(1.01, 1.3),
-                    # r_tip * seed_gen.uniform(1.01, 1.3),
-                    r_tip * 1.2,
-                    r_tip * 1.2,
-                    r_tip * 1.2,
+                    r_tip * seed_gen.uniform(1.01, 1.3),
+                    r_tip * seed_gen.uniform(1.01, 1.3),
+                    r_tip * seed_gen.uniform(1.01, 1.3),
                 ),
             )
 
