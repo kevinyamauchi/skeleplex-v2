@@ -66,8 +66,10 @@ torch = ["torch", "morphospaces>=0.0.5"]
 branch_measurements = ["sam2>=1.0","torch >=2.6.0"]
 
 #synthetic data generation requires igl
-synthetic_data = ['pysdf>=0.1.9']
-
+synthetic_data = [
+    "pysdf>=0.1.9; sys_platform != 'win32'",
+    "libigl>=2.6.1; sys_platform == 'win32'"
+]
 # add dependencies used for testing here
 test = ["pytest", "pytest-cov"]
 # add anything else you like to have in your dev environment here
