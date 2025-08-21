@@ -6,7 +6,7 @@ from skeleplex.data.y_junctions import (
 
 def test_generate_y_junction():
     params = random_parameters_y_junctions(
-        length_parent_range=(20, 25),
+        length_parent_range=(30, 35),
         length_d1_range=(10, 12),
         length_d2_range=(10, 12),
         radius_parent_range=(10, 15),

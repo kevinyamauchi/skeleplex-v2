@@ -174,17 +174,20 @@ def generate_y_junction(
     branch_noisey, skeleton = crop_to_content(branch_noisey, skeleton)
 
     branch_noisey_dask = da.from_array(branch_noisey, chunks=(100, 100, 100))
-    depth = np.min([*list(branch_noisey_dask.shape), 50])
+    depth = np.min([*list(branch_noisey_dask.shape), 30])
     if use_gpu:
         distance_field = da.map_overlap(
             local_normalized_distance_gpu,
             branch_noisey_dask,
-            max_ball_radius=50,
+            max_ball_radius=30,
             depth=depth,
         ).compute()
     else:
         distance_field = da.map_overlap(
-            local_normalized_distance, branch_noisey_dask, max_ball_radius=30, depth=30
+            local_normalized_distance,
+            branch_noisey_dask,
+            max_ball_radius=30,
+            depth=depth,
         ).compute()
 
     distance_field[distance_field == 1] = 0  # remove hot pixels
