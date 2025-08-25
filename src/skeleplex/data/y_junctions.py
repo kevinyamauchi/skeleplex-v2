@@ -156,15 +156,15 @@ def generate_y_junction(
 
     # dilute the tips
     if not ellipse_ratio:
-        for i, point in enumerate([origin, p1, d1, d2]):
-            r_tip = [radius_parent, radius_parent, radius_d1, radius_d2][i]
+        for i, point in enumerate([origin, d1, d2]):
+            r_tip = [radius_parent, radius_d1, radius_d2][i]
             draw_ellipsoid_at_point(
                 branch,
                 point,
                 radii=(
-                    r_tip * seed_gen.uniform(1, 1.1),
-                    r_tip * seed_gen.uniform(1, 1.1),
-                    r_tip * seed_gen.uniform(1, 1.1),
+                    r_tip * seed_gen.uniform(1.01, 1.3),
+                    r_tip * seed_gen.uniform(1.01, 1.3),
+                    r_tip * seed_gen.uniform(1.01, 1.3),
                 ),
             )
 
@@ -174,17 +174,23 @@ def generate_y_junction(
     branch_noisey, skeleton = crop_to_content(branch_noisey, skeleton)
 
     branch_noisey_dask = da.from_array(branch_noisey, chunks=(100, 100, 100))
+    depth = np.min([*list(branch_noisey_dask.shape), 30])
     if use_gpu:
         distance_field = da.map_overlap(
             local_normalized_distance_gpu,
             branch_noisey_dask,
             max_ball_radius=30,
-            depth=30,
+            depth=depth,
         ).compute()
     else:
         distance_field = da.map_overlap(
-            local_normalized_distance, branch_noisey_dask, max_ball_radius=30, depth=30
+            local_normalized_distance,
+            branch_noisey_dask,
+            max_ball_radius=30,
+            depth=depth,
         ).compute()
+
+    distance_field[distance_field == 1] = 0  # remove hot pixels
 
     skeletonization_blur = make_skeleton_blur_image(
         skeleton,

@@ -25,15 +25,47 @@ from skeleplex.skeleton.distance_field import (
 )
 
 
+def compute_distance_between_edge_nodes(
+    graph: nx.DiGraph,
+):
+    """Compute the distance between the start and end nodes of each edge in the graph.
+
+    For the toy graph, this is the length of the edge.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph.
+
+    Returns
+    -------
+    nx.DiGraph
+        The graph with edge lengths annotated.
+    """
+    distances = {}
+    for edge in graph.edges():
+        start, end = edge
+        start_pos = graph.nodes[start][NODE_COORDINATE_KEY]
+        end_pos = graph.nodes[end][NODE_COORDINATE_KEY]
+        distance = np.linalg.norm(end_pos - start_pos)
+        distances[edge] = distance
+
+    nx.set_edge_attributes(graph, distances, LENGTH_KEY)
+    return graph
+
+
 def generate_synthetic_fractal_tree(
     num_nodes: int = 19,
     edge_length: int = 100,
     branch_angle: float = 45,
     wiggle_factor: float = 0.01,
     noise_magnitude: float = 5,
+    dilation_size: int = 3,
     ellipse_ratio: float | None = None,
     use_gpu: bool = True,
     seed: int = 42,
+    inplane_rotation: float | None = None,
+    outplane_rotation: list[float, float, float] | None = None,
 ):
     """Generate a fractal tree structure in a 3D skeleton image.
 
@@ -53,6 +85,9 @@ def generate_synthetic_fractal_tree(
     noise_magnitude : float, optional
         Magnitude of noise to add to the surface of the branches.
         Default is 5.
+    dilation_size : int, optional
+        Size of the dilation applied to the skeleton image.
+        Default is 3.
     ellipse_ratio : float, optional
         Ratio of the radii of the elliptic cylinder segments.
         If None, the branches will be cylindrical.
@@ -63,6 +98,12 @@ def generate_synthetic_fractal_tree(
     seed : int, optional
         Seed for random number generation.
         Default is 42.
+    inplane_rotation : float | None, optional
+        If provided, the in-plane rotation angle in degrees to apply to the tree.
+        If None, a random angle between -90 and 90 degrees will be used.
+    outplane_rotation : list[float, float, float] | None, optional
+        If provided, the rotation angles in degrees to apply to the tree.
+        If None, random angles between -30 and 30 degrees for each axis will be used
     """
     seed_gen = np.random.default_rng(seed)
     # build tree
@@ -71,17 +112,17 @@ def generate_synthetic_fractal_tree(
     )
     g.graph = compute_level(g.graph, origin=-1)
     g.graph = compute_branch_length(g.graph)
-    augment_tree(g.graph)
-    add_rotation_to_tree(g.graph)
+    augment_tree(g.graph, rotation_angles=outplane_rotation)
+    add_rotation_to_tree(g.graph, rotation_angle=inplane_rotation)
 
-    compute_branch_length(g.graph)
+    g.graph = compute_distance_between_edge_nodes(g.graph)
     pos = nx.get_node_attributes(g.graph, NODE_COORDINATE_KEY)
 
     # build images
     pos_values = np.array(list(pos.values()))
-    x_shift = np.abs(np.min(pos_values[:, 0])) + 10
+    x_shift = np.abs(np.min(pos_values[:, 0])) + 20
     y_shift = np.abs(np.min(pos_values[:, 1])) + 30
-    z_shift = np.abs(np.min(pos_values[:, 2])) + 10
+    z_shift = np.abs(np.min(pos_values[:, 2])) + 20
     for node in g.graph.nodes():
         p = g.graph.nodes[node][NODE_COORDINATE_KEY]
         p = p + np.array([x_shift, y_shift, z_shift])
@@ -90,7 +131,7 @@ def generate_synthetic_fractal_tree(
     pos = np.asarray(list(dict(g.nodes(data=NODE_COORDINATE_KEY)).values()))
 
     lengths = np.asarray([g.graph.edges[edge][LENGTH_KEY] for edge in g.graph.edges()])
-    radii = lengths / 3
+    radii = lengths / 3.2
     pad_size = 2 * np.max(radii) + 10
     # Calculate the dimensions of the skeleton image
     x_offset = 0
@@ -137,47 +178,49 @@ def generate_synthetic_fractal_tree(
         )
     # Dilute the tips
     length_dict = nx.get_edge_attributes(g.graph, LENGTH_KEY)
-    for node, degree in g.graph.degree():
-        if degree == 1:
-            # Get the position of the node
-            pos = pos_dict[node]
-            if node == -1:
-                edge = next(iter(list(g.graph.edges(node))))
-            else:
-                edge = next(iter(list(g.graph.in_edges(node))))
-            length = length_dict[edge]
-            radius = length / 3
-            # Dilute the tip by drawing a small cylinder
-            draw_ellipsoid_at_point(
-                branch_img,
-                pos,
-                radii=(
-                    radius * seed_gen.uniform(1, 1.2),
-                    radius * seed_gen.uniform(1, 2),
-                    radius * seed_gen.uniform(1, 2),
-                ),
-            )
+    for node, _ in g.graph.degree():
+        # Get the position of the node
+        pos = pos_dict[node]
+        if node == -1:
+            edge = next(iter(list(g.graph.edges(node))))
+        else:
+            edge = next(iter(list(g.graph.in_edges(node))))
+        length = length_dict[edge]
+        radius = length / 3
+        # Dilute the tip by drawing a small cylinder
+        draw_ellipsoid_at_point(
+            branch_img,
+            pos,
+            radii=(
+                # radius * seed_gen.uniform(1, 1.2),
+                radius * 1.12,
+                # radius * seed_gen.uniform(1, 1.2),
+                radius * 1.12,
+                # radius * seed_gen.uniform(1, 1.2),
+                radius * 1.12,
+            ),
+        )
 
     # Add noise to the branch image
     branch_img = add_noise_to_image_surface(branch_img, noise_magnitude=noise_magnitude)
     # Crop to content
     branch_img, skeleton_img = crop_to_content(branch_img, skeleton_img)
     # Compute the distance field
-    branch_img_dask = da.from_array(branch_img, chunks=(100, 100, 100))
+    branch_img_dask = da.from_array(branch_img, chunks=(200, 200, 200))
+    depth = np.min([*list(branch_img_dask.shape), 30])
+
     if use_gpu:
-        # distance_field = local_normalized_distance_gpu(branch_img,
-        #                                                max_ball_radius=30)
         distance_field = branch_img_dask.map_overlap(
-            local_normalized_distance_gpu, max_ball_radius=30, depth=30
+            local_normalized_distance_gpu, max_ball_radius=30, depth=depth
         ).compute()
     else:
         distance_field = branch_img_dask.map_overlap(
-            local_normalized_distance, max_ball_radius=30, depth=30
+            local_normalized_distance, max_ball_radius=30, depth=depth
         ).compute()
 
     # Create the skeletonization target
     skel_target = make_skeleton_blur_image(
-        skeleton_img, dilation_size=5, gaussian_size=1.5
+        skeleton_img, dilation_size=dilation_size, gaussian_size=1.5
     )
     skel_target = skel_target > 0.7
     skel_target = skel_target.astype(int)
@@ -193,6 +236,7 @@ def generate_random_parameters_for_fractal_tree(
     wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
     noise_magnitude_range: tuple[float, float] = (5, 15),
     ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
+    dilation_size: int = 3,
     use_gpu=True,
     seed: int = 42,
 ):
@@ -213,6 +257,7 @@ def generate_random_parameters_for_fractal_tree(
         wiggle_factor,
         noise_magnitude,
         ellipse_ratio,
+        dilation_size,
         use_gpu,
         seed,
     )

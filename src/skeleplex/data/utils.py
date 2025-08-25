@@ -1,17 +1,25 @@
-import random  # noqa: D100
-
+import random  # noqa
 import networkx as nx
 import numba
 import numpy as np
 import trimesh
 
+import os
+
 try:
-    from igl import signed_distance
+    if os.name == "nt":
+        # windows does not support pysdf
+        from igl import signed_distance
+    if os.name == "posix":
+        from pysdf import SDF
 except ImportError as err:
     raise ImportError(
         'Please install the "synthetic_data" extra '
         "to use this functionality: pip install skeleplex-v2[synthetic_data]"
+        "For windows, please install 'libigl>=2.6.1' instead of 'pysdf'."
     ) from err
+
+from scipy.ndimage import gaussian_filter
 from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
 from skimage.measure import marching_cubes
@@ -22,6 +30,57 @@ from skeleplex.graph.constants import (
     NODE_COORDINATE_KEY,
 )
 from skeleplex.graph.skeleton_graph import SkeletonGraph
+
+
+def generate_low_freq_noise(shape, scale=30, smooth_sigma=10):
+    """Generate low-frequency noise for structured displacement.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the noise array (Z, Y, X).
+    scale : float
+        Scale of the noise.
+    smooth_sigma : float
+        Standard deviation for Gaussian smoothing.
+
+    Returns
+    -------
+    np.ndarray
+        Low-frequency noise array with the specified shape and scale.
+    """
+    noise = np.random.normal(size=shape)
+    smooth_noise = gaussian_filter(noise, sigma=smooth_sigma)
+    return smooth_noise / np.max(np.abs(smooth_noise)) * scale
+
+
+def apply_structured_noise(mesh, noise_field):
+    """Apply structured noise to a mesh by displacing its vertices.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The input mesh to which noise will be applied.
+    noise_field : np.ndarray
+        3D array of noise values to displace the mesh vertices.
+
+    Returns
+    -------
+    trimesh.Trimesh
+        The mesh with applied noise.
+    """
+    verts = mesh.vertices
+    # Round and clip coordinates to index into volume
+    coords = np.round(verts).astype(int)
+    coords = np.clip(coords, [0, 0, 0], np.array(noise_field.shape) - 1)
+
+    # Use the noise as displacement along normals
+    displacement = noise_field[coords[:, 0], coords[:, 1], coords[:, 2]]
+    normals = mesh.vertex_normals
+    verts += normals * displacement[:, np.newaxis]
+
+    mesh.vertices = verts
+    return mesh
 
 
 def add_noise_to_image_surface(image, noise_magnitude=15):
@@ -44,13 +103,17 @@ def add_noise_to_image_surface(image, noise_magnitude=15):
         Binary voxel volume (Z, Y, X) of the noisy shape.
     """
     # Get surface mesh
+    # time_start = time()
     verts, faces, _, _ = marching_cubes(image.astype(float), level=0.5)
-
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-
     # add Gaussian noise to vertices
-    mesh.vertices += np.random.normal(scale=noise_magnitude, size=mesh.vertices.shape)
-
+    noise_field = generate_low_freq_noise(
+        image.shape, scale=noise_magnitude, smooth_sigma=10
+    )
+    mesh = apply_structured_noise(mesh, noise_field)
+    mesh.vertices += np.random.normal(
+        scale=noise_magnitude / 4, size=mesh.vertices.shape
+    )
     # Smooth
     mesh = trimesh.smoothing.filter_taubin(mesh, lamb=0.7, nu=-0.3, iterations=10)
     mesh.fix_normals()
@@ -59,14 +122,19 @@ def add_noise_to_image_surface(image, noise_magnitude=15):
     coords = np.stack((x, y, z), axis=-1)  # shape:
     coords = coords.reshape(-1, 3)  # Flatten to (N, 3)
 
-    signed_distances, _, _, _ = signed_distance(
-        coords, np.array(mesh.vertices), np.array(mesh.faces), sign_type=1
-    )
+    # Compute signed distances
+    # if on windows, use igl signed distance
+    if os.name == "nt":
+        signed_distances, _, _, _ = signed_distance(
+            coords, np.array(mesh.vertices), np.array(mesh.faces), sign_type=1
+        )
 
-    print(np.min(signed_distances), np.max(signed_distances))
-    noisey_image = signed_distances.reshape(image.shape).copy()
-    noisey_image[noisey_image >= 0] = 0  # Set inside points to 1
-    noisey_image[noisey_image < 0] = 1
+        noisey_image = signed_distances.reshape(image.shape).copy()
+        noisey_image[noisey_image >= 0] = 0  # Set inside points to 1
+        noisey_image[noisey_image < 0] = 1
+    else:
+        sdgf = SDF(mesh.vertices, mesh.faces)
+        noisey_image = sdgf.contains(coords).reshape(image.shape)
 
     return noisey_image.astype(np.uint8)
 
@@ -457,10 +525,12 @@ def _draw_elliptic_cylinder_segment(mask, a, b, rx, ry):
                 pa = p - a
                 # Just a dot product, but numba complained about np.dot...
                 t = pa[0] * d_unit[0] + pa[1] * d_unit[1] + pa[2] * d_unit[2]
-                if t < 0:
-                    t = 0
-                elif t > length:
-                    t = length
+                if t < 0 or t > length:
+                    continue  #
+                # if t < 0:
+                #     t = 0
+                # elif t > length:
+                #     t = length
                 closest = a + t * d_unit
                 offset = p - closest
                 # Manual dot products to ensure consistent dtypes
@@ -576,6 +646,10 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle=72, edge_length=2
     i = 3  # Start adding new nodes from index 3
 
     while i < num_nodes:
+        if np.log2(i - 1).is_integer():
+            edge_length = int(
+                0.79 * edge_length
+            )  # Decrease edge length for subsequent branches
         new_parents = []
         for parent_node in parent_nodes:
             if i < num_nodes:
@@ -641,9 +715,8 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle=72, edge_length=2
                 )
                 new_parents.append(i)
                 i += 1
-            edge_length = int(
-                0.8 * edge_length
-            )  # Decrease edge length for subsequent branches
+            # Decrease edge length for the next generation
+
         parent_nodes = new_parents  # Update parent nodes for the next iteration
 
     # Set node attributes for the graph
@@ -656,12 +729,12 @@ def generate_toy_graph_symmetric_branch_angle(num_nodes, angle=72, edge_length=2
     return skeleton_graph
 
 
-def add_rotation_to_tree(tree: nx.DiGraph):
-    """Adds a random rotation between -90 and 90 degree to each level of the tree.
+def add_rotation_to_tree(tree: nx.DiGraph, rotation_angle: float | None = None):
+    """Adds a random rotation between -90 and 90 degrees to each level of the tree.
 
     Each node needs to contain the 3D positional coordinates (array with shape (3,))
     in attribute NODE_COORDINATE_KEY.
-    Rotation will happen along axis 1 (y).
+    Rotation will happen along axis 0 (x-axis).
 
     NOTE: This function does not rotate edge coordinates.
     Might implement this in the future.
@@ -671,12 +744,19 @@ def add_rotation_to_tree(tree: nx.DiGraph):
     tree: nx.DiGraph
         The tree to rotate.
         Eg. to graph from generate_toy_graph_symmetric_branch_angle.
-
+    rotation_angle: float | None
+        If provided, the rotation angle in degrees to apply to the tree.
+        If None, a random angle between -90 and 90 degrees will be used.
     """
     in_edges = list(tree.in_edges())
     in_edges_flatt = [node for edge in in_edges for node in edge]
+
     for nodes, degree in tree.degree():
-        rot_degree = np.radians(random.sample(list(np.linspace(-90, 90, 10)), 1))[0]
+        if rotation_angle is not None:
+            rot_degree = -np.radians(rotation_angle)
+        else:
+            rot_degree = np.radians(random.sample(list(np.linspace(-90, 90, 10)), 1))[0]
+
         updated_positions = {}
         if degree == 3:
             if nodes in in_edges_flatt:
@@ -690,13 +770,15 @@ def add_rotation_to_tree(tree: nx.DiGraph):
                     p = tree.nodes(data=NODE_COORDINATE_KEY)[node]
                     p = p - root
 
+                    # Rotation matrix around X-axis (axis 0)
                     R_matrix = np.array(
-                        (
-                            [np.cos(rot_degree), 0, np.sin(rot_degree)],
-                            [0, 1, 0],
-                            [-np.sin(rot_degree), 0, np.cos(rot_degree)],
-                        )
+                        [
+                            [1, 0, 0],
+                            [0, np.cos(rot_degree), -np.sin(rot_degree)],
+                            [0, np.sin(rot_degree), np.cos(rot_degree)],
+                        ]
                     )
+
                     r = R.from_matrix(R_matrix)
                     p_rot = r.apply(p)
                     p_rot = p_rot + root
@@ -705,7 +787,6 @@ def add_rotation_to_tree(tree: nx.DiGraph):
             nx.set_node_attributes(tree, updated_positions, name=NODE_COORDINATE_KEY)
 
     # avoid negative coordinates
-    # move to positive coordinates
     pos_dict = nx.get_node_attributes(tree, NODE_COORDINATE_KEY)
     pos_values = np.array(list(pos_dict.values()))
 
@@ -717,7 +798,7 @@ def add_rotation_to_tree(tree: nx.DiGraph):
     nx.set_node_attributes(tree, pos, NODE_COORDINATE_KEY)
 
 
-def augment_tree(tree: nx.DiGraph):
+def augment_tree(tree: nx.DiGraph, rotation_angles: list | None = None) -> None:
     """
     Augment a tree by rotating it along the trachea.
 
@@ -731,10 +812,19 @@ def augment_tree(tree: nx.DiGraph):
     tree : nx.DiGraph
         The tree to augment.
         Eg. to graph from generate_toy_graph_symmetric_branch_angle.
+    rotation_angles : float | None
+        If provided, the rotation angle in degrees to apply to the tree.
+        If None, a random angle between -30 and 30 degrees for each axis will be used.
 
     """
     # Rotation matrices
-    rot_degree = np.radians(random.sample(list(np.linspace(-30, 30, 60)), 3))
+    if rotation_angles is not None:
+        rot_degree = np.radians(rotation_angles)
+    else:
+        # Randomly sample a rotation degree from -30 to 30 degrees
+        # for each axis
+        # 3 rotations, one for each axis
+        rot_degree = np.radians(random.sample(list(np.linspace(-30, 30, 60)), 3))
     R_matrix_x = np.array(
         (
             [1, 0, 0],

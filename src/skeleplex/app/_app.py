@@ -362,7 +362,7 @@ class SkelePlexApp(Application):
             )
 
     def add_points(
-        self, point_coordinates: np.ndarray
+        self, point_coordinates: np.ndarray | None = None
     ) -> tuple[PointsVisual, PointsMemoryStore]:
         """Add points to the viewer.
 

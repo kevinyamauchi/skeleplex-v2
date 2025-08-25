@@ -44,3 +44,7 @@ pre-commit install
 
 We transform all coordinates to physical units [µm].
 The images the graphs are based on should be isotropic.
+
+## Differences across OS
+
+To compute signed distances to mesh surfaces, we use pysdf (https://github.com/sxyu/sdf) on UNIX-based systems and igl (https://libigl.github.io) on Windows. Both approaches are expected to yield consistent results, though pysdf generally offers better performance. This difference only affects the generation of synthetic data.
