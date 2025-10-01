@@ -116,7 +116,7 @@ We provide a couple of examples on how to use SkelePlex, see the [`examples/`](e
 This is the best starting point.
 - [`Create a toy segmentation`](examples/segmentation_to_graph/create_example_data.py) 
 - [`Segmentation to graph in memory`](examples/segmentation_to_graph/segmentation_to_graph_memory.py) 
-- [`Segmentation to graph lazyly`](examples/segmentation_to_graph/lazy/tutorial.md) 
+- [`Segmentation to graph lazyly`](docs/segmentation_to_image_lazy.md) 
 
 
 ### Viewer app to inspect and curate graphs
