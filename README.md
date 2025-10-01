@@ -1,19 +1,23 @@
 # SkelePlex v2
 
-[![License](https://img.shields.io/pypi/l/skeleplex-v2.svg?color=green)](https://github.com/MalteMederacke/skeleplex-v2/raw/main/LICENSE)
+[![License](https://img.shields.io/pypi/l/skeleplex-v2.svg?color=green)](https://github.com/kevinyamauchi/skeleplex-v2/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/skeleplex-v2.svg?color=green)](https://pypi.org/project/skeleplex-v2)
 [![Python Version](https://img.shields.io/pypi/pyversions/skeleplex-v2.svg?color=green)](https://python.org)
-[![CI](https://github.com/MalteMederacke/skeleplex-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/MalteMederacke/skeleplex-v2/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/MalteMederacke/skeleplex-v2/branch/main/graph/badge.svg)](https://codecov.io/gh/MalteMederacke/skeleplex-v2)
+[![CI](https://github.com/kevinyamauchi/skeleplex-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/kevinyamauchi/skeleplex-v2/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/kevinyamauchi/skeleplex-v2/branch/main/graph/badge.svg)](https://codecov.io/gh/kevinyamauchi/skeleplex-v2)
 
 **A Python toolkit for analyzing complex biological network structures**
 
+## Work in progress
+ <ins>**This is a work-in-progress re-write of SkelePlex.You may encounter bugs or broken features.**<ins>
+
+## 
 SkelePlex is a comprehensive image analysis tool designed to extract quantitative measurements from complex biological networks while preserving their morphological context. It specializes in analyzing branching structures such as:
 
-- 🫁 **Bronchial trees** - Respiratory system analysis
-- 🩸 **Vasculature** - Blood vessel networks  
-- 🧠 **Axonal networks** - Neural connectivity
-- 🌱 **Xylem structures** - Plant vascular systems
+-  **Bronchial trees** - Respiratory system analysis
+-  **Vasculature** - Blood vessel networks  
+-  **Axonal networks** - Neural connectivity
+-  **Xylem structures** - Plant vascular systems
 
 ## Key Features
 
@@ -39,19 +43,15 @@ SkelePlex is a comprehensive image analysis tool designed to extract quantitativ
 ### Basic Installation
 
 ```bash
-pip install skeleplex-v2
+pip install "git+https://github.com/kevinyamauchi/skeleplex-v2.git#egg=skeleplex-v2[cellier,viz]"
 ```
 
-### Full Installation (with viewer and visualization tools)
-
-```bash
-pip install "skeleplex-v2[cellier,viz]"
-```
 
 ### System Requirements
 
 - Python 3.11+
 - For large datasets: Sufficient RAM or `.zarr` format support
+- For the neural networks access to a GPU is recommended
 - For interactive viewing: OpenGL-compatible graphics
 
 
@@ -116,7 +116,7 @@ We provide a couple of examples on how to use SkelePlex, see the [`examples/`](e
 This is the best starting point.
 - [`Create a toy segmentation`](examples/segmentation_to_graph/create_example_data.py) 
 - [`Segmentation to graph in memory`](examples/segmentation_to_graph/segmentation_to_graph_memory.py) 
-- [`Segmentation to graph lazyly`](docs/segmentation_to_image_lazy.md) 
+- [`Segmentation to graph lazily`](docs/segmentation_to_image_lazy.md) 
 
 
 ### Viewer app to inspect and curate graphs
@@ -143,7 +143,7 @@ If you segmented the tissue of a branch and are interested to measure tissue thi
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/YourUsername/skeleplex-v2.git
+   git clone https://github.com/kevinyamauchi/skeleplex-v2.git
    cd skeleplex-v2
    ```
 
@@ -158,11 +158,10 @@ If you segmented the tissue of a branch and are interested to measure tissue thi
    pip install -e ".[dev-all]"
    ```
 
-4. **Set up Pre-commit Hooks**
+4. **Set up Pre-commit Hooks** to apply linting
    ```bash
    pre-commit install
    ```
-
 ### Running Tests
 
 ```bash
@@ -172,18 +171,6 @@ pytest
 
 # Run specific test module
 pytest tests/graph/test_skeleton_graph.py
-```
-
-### Code Style
-
-We use `ruff` for linting and formatting:
-
-```bash
-# Format code
-ruff format .
-
-# Check for issues
-ruff check .
 ```
 
 ## Technical Notes
