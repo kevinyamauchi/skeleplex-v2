@@ -4,7 +4,12 @@ import numpy as np
 from skimage.draw import disk
 
 
-def draw_tube(image, center=(50, 50), diameter=20, z_span=(25, 75)):
+def draw_tube(
+    image: np.ndarray,
+    center: tuple[int, int] = (50, 50),
+    diameter: int = 20,
+    z_span: tuple[int, int] = (25, 75),
+) -> np.ndarray:
     """
     Add a tube aligned along the z-axis into an existing 3D volume.
 
@@ -33,20 +38,18 @@ def draw_tube(image, center=(50, 50), diameter=20, z_span=(25, 75)):
     return image
 
 
-def draw_tubes_image_example():
+def draw_tubes_image_example() -> np.ndarray:
     """
     Creates a 3D image with multiple tubes for testing.
 
     First and empty 100x100x100 volume is created, then seven tubes with different
     centers, diameters, and z-spans are added to imitate different scales.
 
-    Parameters
-    ----------
-    None.
-
     Returns
     -------
     image : ndarray
+        The output image is a 3D numpy array of shape 100x100x100 containing
+        seven tubes along the z-axis with various diameters.
 
     """
     tubes_image = np.zeros((100, 100, 100), dtype=np.uint8)
