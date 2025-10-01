@@ -5,7 +5,7 @@ This tutorial demonstrates how to compute a distance transform, perform chunkwis
 ## Step 1: Generate Example Data
 
 We start with a synthetic 3D bifurcating tree structure. This serves as an example of a segmented object with branching topology.
-
+All scripts used in this rundown are found in [`examples/segmentation_to_graph/`](../examples/segmentation_to_graph/) .
 You can generate the data using the provided script 'create_example_data.py', which:
 
 - Creates a 3D binary tree-like structure
