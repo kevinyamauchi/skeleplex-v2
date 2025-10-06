@@ -270,8 +270,8 @@ def find_nearest_and_straightest_point_in_segmentation(
         # return nans if no point passes the filters
         return np.array([np.nan, np.nan, np.nan])
     else:
-        scores = weight * (all_distances / all_distances.max())(
-            +(1 - weight) * (all_angles / all_angles.max())
+        scores = weight * (all_distances / all_distances.max()) + (1.0 - weight) * (
+            all_angles / all_angles.max()
         )
         best_index = np.argmin(scores[all_intersects_background])
         # if best_index is using a large angle, return nan
