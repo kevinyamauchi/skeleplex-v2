@@ -61,6 +61,7 @@ def generate_synthetic_fractal_tree(
     wiggle_factor: float = 0.01,
     noise_magnitude: float = 5,
     dilation_size: int = 3,
+    tip_dilation_size: int = 1.05,
     ellipse_ratio: float | None = None,
     use_gpu: bool = True,
     seed: int = 42,
@@ -88,6 +89,9 @@ def generate_synthetic_fractal_tree(
     dilation_size : int, optional
         Size of the dilation applied to the skeleton image.
         Default is 3.
+    tip_dilation_size : float, optional
+        Factor to control the size of the dilation applied to the tips of the branches.
+        Default is 1.05.
     ellipse_ratio : float, optional
         Ratio of the radii of the elliptic cylinder segments.
         If None, the branches will be cylindrical.
@@ -192,12 +196,9 @@ def generate_synthetic_fractal_tree(
             branch_img,
             pos,
             radii=(
-                # radius * seed_gen.uniform(1, 1.2),
-                radius * 1.12,
-                # radius * seed_gen.uniform(1, 1.2),
-                radius * 1.12,
-                # radius * seed_gen.uniform(1, 1.2),
-                radius * 1.12,
+                radius * tip_dilation_size,
+                radius * tip_dilation_size,
+                radius * tip_dilation_size,
             ),
         )
 
