@@ -456,7 +456,10 @@ class SkeletonGraph:
 
     @classmethod
     def from_skeleton_image(
-        cls, skeleton_image: np.ndarray, max_spline_knots: int = 10
+        cls,
+        skeleton_image: np.ndarray,
+        max_spline_knots: int = 10,
+        image_voxel_size_um: float = 1,
     ) -> "SkeletonGraph":
         """Return a SkeletonGraph from a skeleton image.
 
@@ -469,9 +472,13 @@ class SkeletonGraph:
             If the number of data points in the branch is less than this number,
             the spline will use n_data_points - 1 knots.
             See the splinebox Spline class docs for more information.
+        image_voxel_size_um  : float or array of float
+            Spacing of the voxels. Used to transform graph coordinates to um.
         """
         graph = image_to_graph_skan(
-            skeleton_image=skeleton_image, max_spline_knots=max_spline_knots
+            skeleton_image=skeleton_image,
+            max_spline_knots=max_spline_knots,
+            image_voxel_size_um=image_voxel_size_um,
         )
         return cls(graph=graph)
 
