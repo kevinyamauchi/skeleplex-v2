@@ -238,8 +238,11 @@ def generate_random_parameters_for_fractal_tree(
     noise_magnitude_range: tuple[float, float] = (5, 15),
     ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
     dilation_size: int = 3,
+    tip_dilation_size: float = (1.05, 1.2),
     use_gpu=True,
     seed: int = 42,
+    inplane_rotation: float | None = (-20, 20),
+    outplane_rotation: list[float, float, float] | None = None,
 ):
     """Generate random parameters for fractal tree generation."""
     seed_gen = np.random.default_rng(seed)
@@ -251,14 +254,26 @@ def generate_random_parameters_for_fractal_tree(
     ellipse_ratio = (
         seed_gen.uniform(*ellipse_ratio_range) if seed_gen.random() > 0.5 else None
     )
+    tip_dilation_size = seed_gen.uniform(*tip_dilation_size)
+    if inplane_rotation is not None:
+        inplane_rotation = seed_gen.uniform(*inplane_rotation)
+    if outplane_rotation is not None:
+        outplane_rotation = [
+            seed_gen.uniform(*outplane_rotation[0]),
+            seed_gen.uniform(*outplane_rotation[1]),
+            seed_gen.uniform(*outplane_rotation[2]),
+        ]
     return (
         num_nodes,
         edge_length,
         branch_angle,
         wiggle_factor,
         noise_magnitude,
-        ellipse_ratio,
         dilation_size,
+        tip_dilation_size,
+        ellipse_ratio,
         use_gpu,
         seed,
+        inplane_rotation,
+        outplane_rotation,
     )
