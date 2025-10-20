@@ -184,8 +184,9 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     """Checks if the splines are oriented correctly.
 
     If the beginning of the spline is closer to the end node than the start node,
-    it gets flipped.
-    Also checks if the edge coordinates are aligend with the spline.
+    it gets flipped and vice versa.
+    
+    Also checks if the edge coordinates are aligned with the spline.
     This only checks, if the splines are correctly connected to the nodes,
     not the order in the Graph. Best used on a directed graph.
 
@@ -206,19 +207,26 @@ def orient_splines(graph: nx.DiGraph) -> nx.DiGraph:
     for u, v, attr in graph.edges(data=True):
         spline = attr[EDGE_SPLINE_KEY]
         u_coord = graph.nodes[u][NODE_COORDINATE_KEY]
-        spline_coordinates = spline.eval(np.array([0, 1]))
-        # check if spline evaluation is closer to the start or end node
-        if np.linalg.norm(u_coord - spline_coordinates[0]) > np.linalg.norm(
-            u_coord - spline_coordinates[-1]
-        ):
-            logger.info(f"Flipped spline of edge ({u,v}).")
-            edge_coordinates = attr[EDGE_COORDINATES_KEY]
-            # check if path is inverse to spline
-            if np.linalg.norm(
-                edge_coordinates[0] - spline_coordinates[0]
-            ) > np.linalg.norm(edge_coordinates[-1] - spline_coordinates[-1]):
-                edge_coordinates = edge_coordinates[::-1]
+        v_coord = graph.nodes[v][NODE_COORDINATE_KEY]
+        
+        # Evaluate spline endpoints
+        spline_start, spline_end = spline.eval(np.array([0, 1]))
 
+        # Compute distances from spline endpoints to node positions
+        dist_start_to_u = np.linalg.norm(spline_start - u_coord)
+        dist_start_to_v = np.linalg.norm(spline_start - v_coord)
+        dist_end_to_u = np.linalg.norm(spline_end - u_coord)
+        dist_end_to_v = np.linalg.norm(spline_end - v_coord)
+        
+        # Orientation is correct if start→u and end→v are both closest
+        start_correct = dist_start_to_u < dist_start_to_v
+        end_correct = dist_end_to_v < dist_end_to_u
+        
+        # If either endpoint is closer to the wrong node, flip it
+        if not (start_correct and end_correct):
+            logger.info(f"Flipped spline of edge ({u},{v}).")
+
+            edge_coordinates = attr[EDGE_COORDINATES_KEY]
             flipped_spline, flipped_cords = spline.flip_spline(edge_coordinates)
             edge_spline_dict[(u, v)] = flipped_spline
             edge_coordinates_dict[(u, v)] = flipped_cords
