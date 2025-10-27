@@ -346,6 +346,7 @@ def skeleton_image_to_graph(
     degrees_image: da.Array,
     graph_edges_df: pd.DataFrame,
     spacing: float = 1.0,
+    image_voxel_size_um: float = 1.0,
 ) -> nx.Graph:
     """
     Build a NetworkX graph from a skeleton image and graph edges.
@@ -366,6 +367,10 @@ def skeleton_image_to_graph(
         DataFrame of graph edges with columns: 'row', 'col', 'data'.
     spacing : float, optional
         Spacing between voxels. Default is 1.0.
+        This does not scale the graph to um.
+    image_voxel_size_um : float, optional
+        Spacing of the voxels. Used to transform graph coordinates to um.
+        Default is 1.0.
 
     Returns
     -------
@@ -381,6 +386,7 @@ def skeleton_image_to_graph(
 
     skel_obj = Skeleton(np.eye(3))
     skel_obj.skeleton_image = skeleton_image
+    # this doesnt scale the coordinates
     skel_obj.spacing = [spacing] * skeleton_image.ndim
     skel_obj.graph = adj
     skel_obj.degrees_image = degrees_image
@@ -409,7 +415,9 @@ def skeleton_image_to_graph(
         node_src = row.node_id_src
         node_dst = row.node_id_dst
 
+        # path coordinates are not scaled to voxel size.
         edge_coords = skel_obj.path_coordinates(index)
+        edge_coords = edge_coords * image_voxel_size_um  # scale to um
 
         if len(edge_coords) <= 3:
             edge_coords = np.insert(edge_coords, -1, edge_coords[-1] - 0.1, axis=0)
@@ -427,8 +435,9 @@ def skeleton_image_to_graph(
 
     # add node coordinates
     for node_index in nx_graph.nodes():
-        nx_graph.nodes[node_index]["node_coordinate"] = np.asarray(
-            skel_obj.coordinates[node_index]
-        )
+        node_coord = (
+            np.asarray(skel_obj.coordinates[node_index]) * image_voxel_size_um
+        )  # scale to um
+        nx_graph.nodes[node_index]["node_coordinate"] = node_coord
 
     return nx_graph
