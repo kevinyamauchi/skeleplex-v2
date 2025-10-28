@@ -24,8 +24,8 @@ logger.setLevel(logging.INFO)
 def filter_and_segment_lumen(
     data_path,
     save_path,
-    sam_checkpoint_path,
-    resnet_predictor,
+    sam_checkpoint_path: str | None = None,
+    resnet_predictor: ResNet3ClassClassifier | None = None,
     eccentricity_thresh=0.7,
     circularity_thresh=0.5,
     find_lumen=True,
@@ -80,10 +80,12 @@ def filter_and_segment_lumen(
         Path to the input data directory containing .h5 files.
     save_path : str
         Path to the output directory where filtered .h5 files will be saved.
-    sam_checkpoint_path : str
+    sam_checkpoint_path : str, optional
         Path to the SAM2 checkpoint file.
-    resnet_predictor : ResNet3ClassClassifier
+        only required if find_lumen is True.
+    resnet_predictor : ResNet3ClassClassifier, optional
         ResNet classifier for predicting classes.
+        Only required if find_lumen is True.
     eccentricity_thresh : float
         Eccentricity threshold for filtering slices.
     circularity_thresh : float
@@ -95,13 +97,6 @@ def filter_and_segment_lumen(
         Minimum SAM quality score to consider a mask for classification.
 
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # viewer = napari.Viewer()
-    sam2_checkpoint = sam_checkpoint_path
-    model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
-    sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
-    predictor = SAM2ImagePredictor(sam2_model)
-
     if not os.path.exists(save_path):
         os.makedirs(save_path)
         logger.info(f"Created directory: {save_path}")
@@ -159,6 +154,12 @@ def filter_and_segment_lumen(
                 continue
 
             if find_lumen:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                sam2_checkpoint = sam_checkpoint_path
+                model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+                sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
+                predictor = SAM2ImagePredictor(sam2_model)
+
                 label_slice = find_lumen_in_slice(
                     image_slice,
                     label_slice,
