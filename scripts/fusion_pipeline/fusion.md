@@ -34,11 +34,11 @@ fusion/
 To get started with Euler for SkelePlex also see: [Running SkelePlex on ETH Euler Cluster](https://github.com/kevinyamauchi/skeleplex-v2/blob/a13eb36f8a688f01c053e4e3ab636ae9e5aaef64/docs/euler.md)
 
 Create a new virtual environment using these commands:
-    1. Load module stack with pre-installed cuda: `module load stack/2024-06 cuda/12.8.0`
-    2. Load module stack with pre-installed packages: `module load stack/2024-06 python/3.11.6`
-    3. Create new virtual environment called skeleplexenv: `python -m venv --system-site-packages skeleplexenv`
-    4. Activate your new virtual environment called skeleplexenv: `source skeleplexenv/bin/activate`
-    5. Install skeleplex and cuda into that virtual environment: `pip install ".[torch]" cupy-cuda12x"`
+1. Load module stack with pre-installed cuda: `module load stack/2024-06 cuda/12.8.0`
+2. Load module stack with pre-installed packages: `module load stack/2024-06 python/3.11.6`
+3. Create new virtual environment called skeleplexenv: `python -m venv --system-site-packages skeleplexenv`
+4. Activate your new virtual environment called skeleplexenv: `source skeleplexenv/bin/activate`
+5. Install skeleplex and cuda into that virtual environment: `pip install ".[torch]" cupy-cuda12x"`
 
 
 ## Submission Scripts
@@ -78,7 +78,8 @@ Fusion part III also requires specification of the `job-index`, it is used as a 
 ## Submitting Fusion Jobs on Euler
 To string the jobs together on Euler, submit them as dependencies by replaceing the capital letters `FUSION_X` with the respective Euler Job-ID.
 
-### Fusion Part I
+### Fusion Part I
+
 `sbatch 1_fusion_submission.sh`
 
 ### Fusion Part II
