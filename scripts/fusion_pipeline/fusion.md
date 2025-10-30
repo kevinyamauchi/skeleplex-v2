@@ -20,20 +20,15 @@ Once the above adaptations were made, upload the files to Euler using: `rsync -a
 
 Ensure to create a new folder to store the fusion python files and a data folder within. The file structure should follow this scheme:
 
+"""bash
 fusion/
-
 ├── data/
-
 │   ├── image segmentataion
-
 │   └── zarr output files
-
 └── python scripts
-
 └── submission scripts
-
 └── job output files
-
+"""
 
 ## Virtual Environment for Fusion Pipeline on Euler
 To get started with Euler for SkelePlex also see: [Running SkelePlex on ETH Euler Cluster](https://github.com/kevinyamauchi/skeleplex-v2/blob/a13eb36f8a688f01c053e4e3ab636ae9e5aaef64/docs/euler.md)
