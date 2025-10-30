@@ -21,11 +21,17 @@ Once the above adaptations were made, upload the files to Euler using: `rsync -a
 Ensure to create a new folder to store the fusion python files and a data folder within. The file structure should follow this scheme:
 
 fusion/
+
 ├── data/
+
 │   ├── image segmentataion
+
 │   └── zarr output files
+
 └── python scripts
+
 └── submission scripts
+
 └── job output files
 
 
