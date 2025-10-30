@@ -68,7 +68,7 @@ To achieve correct processing on multiple scales, include `job-index` and `job-i
 #SBATCH --gpus=rtx_4090:1    
 #SBATCH --output=2_2_fusion_%j.out
 
-python 2_1_fusion.py --workers 6 --job-index $SLURM_ARRAY_TASK_ID --job-index-offset 3
+python 2_2_fusion.py --workers 4 --job-index $SLURM_ARRAY_TASK_ID --job-index-offset 3
 
 echo "Job completed: $(date)"
 ```
