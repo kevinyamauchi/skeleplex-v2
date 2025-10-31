@@ -12,7 +12,7 @@ The following elements in the python scripts need to be adapted to the use-case,
 
 * **Image Prefix:** Is used to save the files generated in the fusion pipeline with a specified prefix (e.g., LungXX).
 * **Scale Ranges:** This is a dictionary that is used to define the scales and ranges of radii covered in the scale map (used to assign which areas are pulled from which resized skeleton prediction).
-* **Image Segmnetation Path:** Adapt this file path according to its location on Euler. The file should be a `.zarr` of the image segmentation (i.e., binary mask of the airways).
+* **Image Segmnetation Path:** Adapt this file path according to its location on Euler. The file should be a `.zarr` of the image segmentation (i.e., binary mask of the airways). The default file path is automatically generated based on the specified image prefix (`data/IMAGE_PREFIX.zarr`).
 * **Thresholds List:** This list is used to specify a set of thresholds that will be applied to threshold the image in fusion part III. 
 
 

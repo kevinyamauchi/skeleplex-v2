@@ -134,7 +134,7 @@ scale_ranges_manual = {
 
 
 # Load the initial image (here: label)
-lung_image = da.from_zarr("data/IMAGE_NAME.zarr")  # ADAPT HERE
+lung_image = da.from_zarr(f"data/{image_prefix}.zarr")  # ADAPT HERE
 lung_image = lung_image.rechunk((94, 94, 94))
 
 
@@ -180,6 +180,5 @@ with dask.config.set(num_workers=1):
         f"data/{image_prefix}_image_scale_map.zarr/scale_original", overwrite=True
     )
 
-print(f"--- Scale map creation took {time.time()
-                                     - start_time} seconds ---")
+print(f"--- Scale map creation took {time.time() - start_time} seconds ---")
 print("End of Fusion part 1.")

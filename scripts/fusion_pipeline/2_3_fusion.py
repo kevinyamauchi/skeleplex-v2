@@ -22,9 +22,6 @@ from morphospaces.networks.multiscale_skeletonization import (
 
 from skeleplex.skeleton._utils import get_skeletonization_model, make_image_5d
 
-parser = argparse.ArgumentParser()
-
-
 ##################################################################################################
 #                                           FUNCTIONS
 ##################################################################################################
@@ -109,7 +106,7 @@ scale_ranges_manual = {
 }  # ADAPT HERE
 
 ################ Fusion Part 2.3 ################
-
+parser = argparse.ArgumentParser()
 parser.add_argument(
     "--job-index", help="this is the index of the submitted job", type=int
 )
@@ -142,7 +139,7 @@ start_time = time.time()
 with dask.config.set(num_workers=args.workers):
     # Zarr store
     save_here = zarr.open(
-        f"data/{image_prefix}_skeleton_predictions_on_scales_chunkwise.zarr/scale{scale_number}",
+        f"data/{image_prefix}_skeleton_predictions_on_scales.zarr/scale{scale_number}",
         mode="w",
         shape=dist_image.shape,
         chunks=dist_image.chunks,
@@ -171,7 +168,7 @@ with dask.config.set(num_workers=args.workers):
         gc.collect()
 
     group = zarr.open_group(
-        f"data/{image_prefix}_skeleton_predictions_on_scales_chunkwise.zarr", mode="a"
+        f"data/{image_prefix}_skeleton_predictions_on_scales.zarr", mode="a"
     )
     scale_factor = 2**scale_number
     group[f"scale{scale_number}"].attrs["scale"] = [
@@ -179,5 +176,4 @@ with dask.config.set(num_workers=args.workers):
         scale_factor,
         scale_factor,
     ]
-print(f"--- Skeleton Prediction took {time.time()
-                                      - start_time} seconds ---")
+print(f"--- Skeleton Prediction took {time.time() - start_time} seconds ---")

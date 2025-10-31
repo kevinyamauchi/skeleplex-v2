@@ -13,30 +13,34 @@ import numpy as np
 import skimage.transform
 import zarr
 
-parser = argparse.ArgumentParser()
-
-# External function copied from: https://github.com/ome/ome-zarr-py/blob/5c5b45e46e468a3f582a583c915b9eefb636b82c/ome_zarr/dask_utils.py#L11C1-L62C63
-
 
 def resize(
     image: da.Array, output_shape: tuple[int, ...], *args: Any, **kwargs: Any
 ) -> da.Array:
-    r"""
+    """
     Resize function.
+
+    Adapted from:
+    https://github.com/ome/ome-zarr-py/blob/5c5b45e46e468a3f582a583c915b9eefb636b82c/ome_zarr/dask_utils.py#L11C1-L62C63
 
     Wrapped copy of "skimage.transform.resize"
     Resize image to match a certain size.
 
-    :type image: :class:`dask.array`
-    :param image: The dask array to resize
-    :type output_shape: tuple
-    :param output_shape: The shape of the resize array
-    :type \*args: list
-    :param \*args: Arguments of skimage.transform.resize
-    :type \*\*kwargs: dict
-    :param \*\*kwargs: Keyword arguments of skimage.transform.resize
-    :return: Resized image.
+    Parameters
+    ----------
+    image: da.Array
+        Input image (dask array) to be resized.
+    output_shape: tuple[int, ...]
+        The shape that the resized output image should have.
+    *args: Any
+        Additional positional arguments to pass to skimage.transform.resize.
+    **kwargs: Any
+        Additional keyword arguments to pass to skimage.transform.resize.
 
+    Returns
+    -------
+    da.Array
+        Input arrays scaled to the specified scales.
     """
     factors = np.array(output_shape) / np.array(image.shape).astype(float)
     # Rechunk the input blocks so that the factors achieve an output
@@ -151,11 +155,11 @@ scale_ranges_manual = {
 
 
 # Load the initial image (here: label)
-lung_image = da.from_zarr("data/IMAGE_NAME.zarr")  # ADAPT HERE
+lung_image = da.from_zarr(f"data/{image_prefix}.zarr")  # ADAPT HERE
 
 
 ################ Fusion Part 2.4 ################
-
+parser = argparse.ArgumentParser()
 parser.add_argument(
     "--job-index", help="this is the index of the submitted job", type=int
 )
@@ -198,6 +202,5 @@ lung_image = lung_image.rechunk((96, 96, 96))
 with dask.config.set(num_workers=args.workers):
     re_scale_image(scale_number=scale_number, int_order=1, og_img=lung_image)
 
-print(f"--- Re-scaling took {time.time()
-                              - start_time2} seconds ---")
+print(f"--- Re-scaling took {time.time() - start_time2} seconds ---")
 print("Image was re-scaled. End of fusion part 2.")

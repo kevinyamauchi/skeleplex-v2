@@ -3,76 +3,10 @@
 ##################################################################################################
 #                                           IMPORTS
 ##################################################################################################
-import argparse
 import time
-from typing import Any
 
 import dask.array as da
 import numpy as np
-import skimage.transform
-
-parser = argparse.ArgumentParser()
-
-# External function copied from: https://github.com/ome/ome-zarr-py/blob/5c5b45e46e468a3f582a583c915b9eefb636b82c/ome_zarr/dask_utils.py#L11C1-L62C63
-
-
-def resize(
-    image: da.Array, output_shape: tuple[int, ...], *args: Any, **kwargs: Any
-) -> da.Array:
-    r"""
-    Resize function.
-
-    Wrapped copy of "skimage.transform.resize"
-    Resize image to match a certain size.
-
-    :type image: :class:`dask.array`
-    :param image: The dask array to resize
-    :type output_shape: tuple
-    :param output_shape: The shape of the resize array
-    :type \*args: list
-    :param \*args: Arguments of skimage.transform.resize
-    :type \*\*kwargs: dict
-    :param \*\*kwargs: Keyword arguments of skimage.transform.resize
-
-    :return: Resized image.
-    """
-    factors = np.array(output_shape) / np.array(image.shape).astype(float)
-    # Rechunk the input blocks so that the factors achieve an output
-    # blocks size of full numbers.
-    better_chunksize = tuple(
-        np.maximum(1, np.round(np.array(image.chunksize) * factors) / factors).astype(
-            int
-        )
-    )
-    image_prepared = image.rechunk(better_chunksize)
-
-    # If E.g. we resize image from 6675 by 0.5 to 3337, factor is 0.49992509 so each
-    # chunk of size e.g. 1000 will resize to 499. When assumbled into a new array, the
-    # array will now be of size 3331 instead of 3337 because each of 6 chunks was
-    # smaller by 1. When we compute() this, dask will read 6 chunks of 1000 and expect
-    # last chunk to be 337 but instead it will only be 331.
-    # So we use ceil() here (and in resize_block) to round 499.925 up to chunk of 500
-    block_output_shape = tuple(
-        np.ceil(np.array(better_chunksize) * factors).astype(int)
-    )
-
-    # Map overlap
-    def resize_block(image_block: da.Array, block_info: dict) -> da.Array:
-        # if the input block is smaller than a 'regular' chunk (e.g. edge of image)
-        # we need to calculate target size for each chunk...
-        chunk_output_shape = tuple(
-            np.ceil(np.array(image_block.shape) * factors).astype(int)
-        )
-        return skimage.transform.resize(
-            image_block, chunk_output_shape, *args, **kwargs
-        ).astype(image_block.dtype)
-
-    output_slices = tuple(slice(0, d) for d in output_shape)
-    output = da.map_blocks(
-        resize_block, image_prepared, dtype=image.dtype, chunks=block_output_shape
-    )[output_slices]
-    return output.rechunk(image.chunksize).astype(image.dtype)
-
 
 ##################################################################################################
 #                                           FUNCTIONS
@@ -80,7 +14,10 @@ def resize(
 
 
 def optimal_tree_generator(
-    scale_map: np.ndarray, image: np.ndarray, scale_ranges: dict
+    scale_map: np.ndarray,
+    image: np.ndarray,
+    scale_ranges: dict,
+    scaled_images_dict: dict,
 ) -> np.ndarray:
     """
     Generate Optimal Tree.
@@ -101,6 +38,8 @@ def optimal_tree_generator(
     scale_ranges : dict
         This dictionary is used to map the scales to the radii
         in the radius_map.
+    scaled_images_dict : dict
+        Dictionary containing all re-scaled skeleton predictions.
 
     Returns
     -------
@@ -118,8 +57,8 @@ def optimal_tree_generator(
         name = f"{image_prefix}_image_skeletonized_rescaled_from_{scale_number}"
         print(name)
 
-        globals()[name] = globals()[name].rechunk(scale_map.chunks)
-        optimal_tree = da.where(mask, globals()[name], optimal_tree)
+        scaled_images_dict[name] = scaled_images_dict[name].rechunk(scale_map.chunks)
+        optimal_tree = da.where(mask, scaled_images_dict[name], optimal_tree)
 
     optimal_tree.to_zarr(f"data/{image_prefix}_optimal_tree.zarr", overwrite=True)
     return optimal_tree
@@ -141,7 +80,7 @@ scale_ranges_manual = {
 }  # ADAPT HERE
 
 # Load the initial image (here: label)
-lung_image = da.from_zarr("data/IMAGE_NAME.zarr")  # ADAPT HERE
+lung_image = da.from_zarr(f"data/{image_prefix}.zarr")  # ADAPT HERE
 lung_image = lung_image.rechunk((192, 192, 192))
 
 
@@ -158,25 +97,24 @@ lung_image_scale_map = lung_image_scale_map.rechunk((192, 192, 192))
 ################ From fusion Part 2 ################
 
 # Load rescaled images to combine rescaled images via scale map
+multiscale_images = {}
 for key in scale_ranges_manual.keys():
     scale_number = key
-
     image = da.from_zarr(
         f"data/{image_prefix}_skeletonized_rescaled.zarr/origin_scale{scale_number}"
     )
     image = image.rechunk((192, 192, 192))
     name = f"{image_prefix}_image_skeletonized_rescaled_from_{scale_number}"
     print(name)
-    globals()[name] = image
+    multiscale_images[name] = image
 
-print(f"--- Loading all images took {time.time()
-                                     - start_time1} seconds ---")
+print(f"--- Loading all images took {time.time() - start_time1} seconds ---")
+
 ################ Fusion Part 3 ################
 start_time2 = time.time()
 # Combine resclaed images to one via scale map: generate optimal tree
 lung_image_optimum = optimal_tree_generator(
-    lung_image_scale_map, lung_image, scale_ranges_manual
+    lung_image_scale_map, lung_image, scale_ranges_manual, multiscale_images
 )
 lung_image_optimum = lung_image_optimum.rechunk((192, 192, 192))
-print(f"--- Generating optimal tree took {time.time()
-                                          - start_time2} seconds ---")
+print(f"--- Generating optimal tree took {time.time() - start_time2} seconds ---")

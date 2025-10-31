@@ -13,9 +13,6 @@ import zarr
 
 from skeleplex.skeleton.distance_field import local_normalized_distance_gpu
 
-parser = argparse.ArgumentParser()
-
-
 ##################################################################################################
 #                                           RUNNING FUSION
 ##################################################################################################
@@ -32,7 +29,7 @@ scale_ranges_manual = {
 }  # ADAPT HERE
 
 ################ Fusion Part 2.2 ################
-
+parser = argparse.ArgumentParser()
 parser.add_argument(
     "--job-index", help="this is the index of the submitted job", type=int
 )

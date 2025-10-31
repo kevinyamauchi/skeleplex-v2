@@ -11,9 +11,6 @@ from skimage.morphology import skeletonize as sk_skeletonize
 
 from skeleplex.skeleton._skeletonize import threshold_skeleton
 
-parser = argparse.ArgumentParser()
-
-
 ##################################################################################################
 #                                           RUNNING FUSION
 ##################################################################################################
@@ -33,7 +30,7 @@ scale_ranges_manual = {
 # Example: define thresholds for the final fusion 3 step
 thresholds_list = [0.4, 0.45, 0.55, 0.65, 0.7]  # ADAPT HERE
 
-
+parser = argparse.ArgumentParser()
 parser.add_argument(
     "--job-index", help="this is the index of the submitted job", type=int
 )
@@ -49,7 +46,7 @@ print("Threshold: ", threshold)
 print("Threshold name:", threshold_name)
 
 
-################ Fusion Part 1 ################
+############## from Fusion Part 1 ##############
 
 # Load Scale Map
 lung_image_scale_map = da.from_zarr(
@@ -58,26 +55,7 @@ lung_image_scale_map = da.from_zarr(
 lung_image_scale_map = lung_image_scale_map.rechunk((192, 192, 192))
 
 
-################ Fusion Part 2 ################
-
-# Load rescaled images to combine rescaled images via scale map
-
-for key in scale_ranges_manual.keys():
-    scale_number = key
-
-    image = da.from_zarr(
-        f"data/{image_prefix}_skeletonized_rescaled.zarr/origin_scale{scale_number}"
-    )
-    image = image.rechunk((192, 192, 192))
-    name = f"{image_prefix}_image_skeletonized_rescaled_from_{scale_number}"
-    print(name)
-    globals()[name] = image
-
-print(f"--- Loading all images took {time.time()
-                                     - start_time1} seconds ---")
-
 ################ Fusion Part 3 #################
-
 
 # Threshold Image
 start_time3 = time.time()
@@ -87,8 +65,7 @@ lung_image_binary_skeleton.to_zarr(
     f"data/{image_prefix}_optimal_tree_binary_skeleton.zarr/ts{threshold_name}",
     overwrite=True,
 )
-print(f"--- Thresholding optimal tree took {time.time()
-                                            - start_time3} seconds ---")
+print(f"--- Thresholding optimal tree took {time.time() - start_time3} seconds ---")
 
 # Perform Thinning / Skeletonizing
 start_time4 = time.time()
@@ -102,5 +79,4 @@ lung_image_final_skeleton.to_zarr(
     f"data/{image_prefix}_final_skeleton.zarr/ts{threshold_name}", overwrite=True
 )
 
-print(f"--- Skeletonizing optimal tree took {time.time()
-                                             - start_time4} seconds ---")
+print(f"--- Skeletonizing optimal tree took {time.time() - start_time4} seconds ---")
