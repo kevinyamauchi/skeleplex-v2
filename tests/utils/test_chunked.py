@@ -1,0 +1,146 @@
+"""Tests for the utilities for working with chunked arrays."""
+
+import dask.array as da
+import numpy as np
+import pytest
+import zarr
+from scipy.ndimage import convolve
+
+from skeleplex.utils import iteratively_process_chunks_3d
+
+
+def test_input_array_not_3d(tmp_path):
+    """Test that ValueError is raised when input array is not 3D."""
+    # create a 2D dask array
+    input_array = da.zeros((10, 10), chunks=(5, 5))
+
+    # create output zarr
+    output_path = tmp_path / "output.zarr"
+    output_zarr = zarr.open(str(output_path), mode="w", shape=(10, 10), dtype="float64")
+
+    def dummy_func(x):
+        return x
+
+    with pytest.raises(ValueError, match="Input array must be 3D"):
+        iteratively_process_chunks_3d(
+            input_array=input_array,
+            output_zarr=output_zarr,
+            function_to_apply=dummy_func,
+            chunk_shape=(5, 5, 5),
+            extra_border=(1, 1, 1),
+        )
+
+
+def test_chunk_shape_not_3_tuple(tmp_path):
+    """Test that ValueError is raised when chunk_shape is not a 3-tuple."""
+    # create a 3D dask array
+    input_array = da.zeros((10, 10, 10), chunks=(5, 5, 5))
+
+    # create output zarr
+    output_path = tmp_path / "output.zarr"
+    output_zarr = zarr.open(
+        str(output_path), mode="w", shape=(10, 10, 10), dtype="float64"
+    )
+
+    def dummy_func(x):
+        return x
+
+    with pytest.raises(ValueError, match="chunk_shape must be a 3-tuple"):
+        iteratively_process_chunks_3d(
+            input_array=input_array,
+            output_zarr=output_zarr,
+            function_to_apply=dummy_func,
+            chunk_shape=(5, 5),  # Only 2 elements
+            extra_border=(1, 1, 1),
+        )
+
+
+def test_extra_border_not_3_tuple(tmp_path):
+    """Test that ValueError is raised when extra_border is not a 3-tuple."""
+    # create a 3D dask array
+    input_array = da.zeros((10, 10, 10), chunks=(5, 5, 5))
+
+    # create output zarr
+    output_path = tmp_path / "output.zarr"
+    output_zarr = zarr.open(
+        str(output_path), mode="w", shape=(10, 10, 10), dtype="float64"
+    )
+
+    def dummy_func(x):
+        return x
+
+    with pytest.raises(ValueError, match="extra_border must be a 3-tuple"):
+        iteratively_process_chunks_3d(
+            input_array=input_array,
+            output_zarr=output_zarr,
+            function_to_apply=dummy_func,
+            chunk_shape=(5, 5, 5),
+            extra_border=(1, 1),  # Only 2 elements
+        )
+
+
+def test_shape_mismatch(tmp_path):
+    """Test that ValueError is raised when input and output shapes don't match."""
+    # create a 3D dask array
+    input_array = da.zeros((10, 10, 10), chunks=(5, 5, 5))
+
+    # create output zarr with different shape
+    output_path = tmp_path / "output.zarr"
+    output_zarr = zarr.open(
+        str(output_path), mode="w", shape=(10, 10, 8), dtype="float64"
+    )
+
+    def dummy_func(x):
+        return x
+
+    with pytest.raises(ValueError, match="Input and output shapes must match"):
+        iteratively_process_chunks_3d(
+            input_array=input_array,
+            output_zarr=output_zarr,
+            function_to_apply=dummy_func,
+            chunk_shape=(5, 5, 5),
+            extra_border=(1, 1, 1),
+        )
+
+
+def test_processing_with_convolution(tmp_path):
+    """Test roundtrip processing with convolution to verify border handling."""
+    # create a small input array with chunks that
+    # require proper border handling
+    shape = (5, 5, 5)
+    chunk_shape = (2, 2, 2)
+    extra_border = (1, 1, 1)
+
+    # create input with unique values
+    input_data = (np.arange(5 * 5 * 5) + 1).reshape(shape).astype("float64")
+    input_array = da.from_array(input_data, chunks=chunk_shape)
+
+    # create output zarr
+    output_path = tmp_path / "output.zarr"
+    output_zarr = zarr.open(
+        str(output_path), mode="w", shape=shape, chunks=chunk_shape, dtype="float64"
+    )
+
+    # define convolution function with a 3x3x3 kernel of ones
+    kernel = np.ones((3, 3, 3), dtype="float64")
+
+    def convolve_func(x):
+        return convolve(x, kernel, mode="constant", cval=0.0)
+
+    # process the array
+    iteratively_process_chunks_3d(
+        input_array=input_array,
+        output_zarr=output_zarr,
+        function_to_apply=convolve_func,
+        chunk_shape=chunk_shape,
+        extra_border=extra_border,
+    )
+
+    # load the result
+    result = np.array(output_zarr[:])
+
+    # compute expected result: convolve the entire input array
+    expected = convolve(input_data, kernel, mode="constant", cval=0.0)
+
+    # verify the result matches expected
+    np.testing.assert_array_almost_equal(result, expected)
