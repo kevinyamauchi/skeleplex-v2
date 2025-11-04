@@ -2,7 +2,7 @@ import numpy as np
 import zarr
 
 from skeleplex.skeleton import label_chunks_parallel
-from skeleplex.skeleton._chunked_label import _find_touching_labels
+from skeleplex.skeleton._chunked_label import _find_touching_labels, _make_label_mapping
 
 
 def test_label_chunks_parallel_simple_cubes(tmp_path):
@@ -129,3 +129,35 @@ def test_find_touching_labels(tmp_path):
     # Labels 2 and 3 should be touching at this boundary
     touching_16_set = {tuple(sorted(pair)) for pair in touching_at_16.tolist()}
     assert {(2, 3)} == touching_16_set
+
+
+def test_make_label_mapping():
+    """Test label mapping with single pair and multi-pair connected component."""
+    # Create touching pairs:
+    # - Single pair: 10 and 15 (should map 10 -> 15)
+    # - Connected component: 2 -> 5 -> 8 (should map 2 -> 8 and 5 -> 8)
+    touching_pairs = np.array(
+        [
+            [10, 15],  # Single pair
+            [2, 5],  # Connected component part 1
+            [5, 8],  # Connected component part 2 (connects 2, 5, 8)
+        ]
+    )
+
+    max_label_value = 20
+
+    mapping = _make_label_mapping(touching_pairs, max_label_value)
+
+    # Expected mapping:
+    # - 10 -> 15 (max of {10, 15})
+    # - 2 -> 8 (max of {2, 5, 8})
+    # - 5 -> 8 (max of {2, 5, 8})
+    # - 15 and 8 are not in mapping (already max in their components)
+
+    expected = {
+        10: 15,
+        2: 8,
+        5: 8,
+    }
+
+    assert mapping == expected, f"Expected {expected}, got {mapping}"

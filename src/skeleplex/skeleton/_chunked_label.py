@@ -5,6 +5,9 @@ from typing import Literal
 
 import numpy as np
 import zarr
+from scipy.ndimage import binary_dilation, generate_binary_structure
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 from skimage.measure import label
 
 # Global variables to hold shared state in worker processes
@@ -202,3 +205,146 @@ def label_chunks_parallel(
     total_labels = offset_counter.value
 
     return total_labels
+
+
+def _find_touching_labels(
+    region_slice: tuple[slice, slice, slice], label_image_path: str
+) -> np.ndarray:
+    """
+    Find pairs of labels that are touching within a region using 26-connectivity.
+
+    Parameters
+    ----------
+    region_slice: tuple[slice, slice, slice]
+        slice objects defining the region to check
+    label_image_path: str
+        path to zarr array containing labeled image
+
+    Returns
+    -------
+    np.ndarray
+        (n_pairs, 2) array where each row is [label_A, label_B]
+        with label_A < label_B. Returns empty (0, 2) array if no touching pairs.
+    """
+    # Load the region from zarr
+    label_image = zarr.open(str(label_image_path), mode="r")
+    region = label_image[region_slice]
+
+    # Get unique labels in the region (exclude 0 which is background)
+    unique_labels = np.unique(region)
+    unique_labels = unique_labels[unique_labels != 0]
+
+    # Create 26-connectivity structure (3D, connectivity=3 includes all diagonals)
+    connectivity_structure = generate_binary_structure(3, 3)
+
+    # Set to store unique touching pairs
+    touching_pairs = set()
+
+    # For each label, find what it touches
+    for label_A in unique_labels:
+        # Create binary mask for this label
+        binary_mask = region == label_A
+
+        # Dilate by 1 voxel in all 26 directions
+        dilated_mask = binary_dilation(binary_mask, structure=connectivity_structure)
+
+        # Find labels in the dilated region
+        touching_region = region[dilated_mask]
+        touching_labels = np.unique(touching_region)
+
+        # Exclude the label itself and background (0)
+        touching_labels = touching_labels[
+            (touching_labels != label_A) & (touching_labels != 0)
+        ]
+
+        # Add pairs (always store as min, max to avoid duplicates)
+        for label_B in touching_labels:
+            pair = (min(label_A, label_B), max(label_A, label_B))
+            touching_pairs.add(pair)
+
+    # Convert to numpy array
+    if len(touching_pairs) == 0:
+        return np.empty((0, 2), dtype=region.dtype)
+
+    result = np.array(list(touching_pairs), dtype=region.dtype)
+    return result
+
+
+def _make_label_mapping(
+    touching_pairs: np.ndarray, max_label_value: int
+) -> dict[int, int]:
+    """
+    Create a label mapping based on connected components of touching labels.
+
+    Labels in the same connected component are mapped to the maximum label
+    value within that component.
+
+    Parameters
+    ----------
+    touching_pairs : np.ndarray
+        Array of shape (n_pairs, 2) with pairs of touching labels.
+    max_label_value : int
+        Maximum label value in the entire image.
+
+    Returns
+    -------
+    dict[int, int]
+        Dictionary mapping original labels to new labels. Only includes labels
+        that need to change (excludes identity mappings like {5: 5}).
+    """
+    # Handle empty touching_pairs
+    if len(touching_pairs) == 0:
+        return {}
+
+    # Build adjacency matrix
+    # Matrix size is (max_label_value + 1) to accommodate labels
+    # from 0 to max_label_value
+    n_labels = max_label_value + 1
+
+    # Extract row and column indices from touching_pairs
+    rows = touching_pairs[:, 0]
+    cols = touching_pairs[:, 1]
+
+    # Create data for both directions (undirected graph)
+    # Add both [a, b] and [b, a] edges
+    row_indices = np.concatenate([rows, cols])
+    col_indices = np.concatenate([cols, rows])
+    data = np.ones(len(row_indices), dtype=np.uint8)
+
+    # Build sparse adjacency matrix
+    adjacency_matrix = csr_matrix(
+        (data, (row_indices, col_indices)), shape=(n_labels, n_labels)
+    )
+
+    # Find connected components
+    n_components, component_labels = connected_components(
+        adjacency_matrix, directed=False, return_labels=True
+    )
+
+    # Get unique labels that appear in touching_pairs
+    unique_labels = np.unique(touching_pairs)
+
+    # Find max label in each component
+    # component_max[component_id] = max_label in that component
+    component_max = {}
+
+    for label_value in unique_labels:
+        component_id = component_labels[label_value]
+
+        if component_id not in component_max:
+            component_max[component_id] = label_value
+        else:
+            component_max[component_id] = max(component_max[component_id], label_value)
+
+    # Create mapping: only include labels that change
+    label_mapping = {}
+
+    for label_value in unique_labels:
+        component_id = component_labels[label_value]
+        max_label_in_component = component_max[component_id]
+
+        # Only add to mapping if label changes
+        if label_value != max_label_in_component:
+            label_mapping[label_value] = max_label_in_component
+
+    return label_mapping
