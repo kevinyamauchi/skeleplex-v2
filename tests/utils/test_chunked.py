@@ -6,7 +6,7 @@ import pytest
 import zarr
 from scipy.ndimage import convolve
 
-from skeleplex.utils import iteratively_process_chunks_3d
+from skeleplex.utils import get_boundary_slices, iteratively_process_chunks_3d
 
 
 def test_input_array_not_3d(tmp_path):
@@ -144,3 +144,26 @@ def test_processing_with_convolution(tmp_path):
 
     # verify the result matches expected
     np.testing.assert_array_almost_equal(result, expected)
+
+
+def test_boundary_slices():
+    """Test boundary slices calculation for chunked arrays."""
+    array_shape = (10, 10, 10)
+    chunk_shape = (5, 7, 10)
+
+    result = get_boundary_slices(array_shape, chunk_shape)
+
+    # Expected boundaries:
+    # - Dimension 0 (z): chunks at [0:5, 5:10] -> boundary at z=5
+    # - Dimension 1 (y): chunks at [0:7, 7:10] -> boundary at y=7
+    # - Dimension 2 (x): chunks at [0:10] -> no internal boundaries (only 1 chunk)
+
+    expected = [
+        (slice(4, 6), slice(None), slice(None)),  # z-boundary at 5
+        (slice(None), slice(6, 8), slice(None)),  # y-boundary at 7
+    ]
+
+    assert len(result) == len(
+        expected
+    ), f"Expected {len(expected)} boundaries, got {len(result)}"
+    assert result == expected, f"Expected {expected}, got {result}"

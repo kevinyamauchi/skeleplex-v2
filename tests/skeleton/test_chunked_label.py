@@ -2,6 +2,7 @@ import numpy as np
 import zarr
 
 from skeleplex.skeleton import label_chunks_parallel
+from skeleplex.skeleton._chunked_label import _find_touching_labels
 
 
 def test_label_chunks_parallel_simple_cubes(tmp_path):
@@ -78,3 +79,53 @@ def test_label_chunks_parallel_simple_cubes(tmp_path):
         3,
         4,
     }, f"Expected cube labels {{1, 2, 3, 4}}, got {set(cube_labels)}"
+
+
+def test_find_touching_labels(tmp_path):
+    """Test that labels spanning multiple chunks are detected as touching."""
+    array_shape = (20, 20, 20)
+    chunk_shape = (8, 8, 8)
+
+    # Create zarr array
+    label_path = str(tmp_path / "labels.zarr")
+    label_image = zarr.open(
+        str(label_path),
+        mode="w",
+        shape=array_shape,
+        chunks=chunk_shape,
+        dtype=np.uint16,
+    )
+
+    # Initialize with zeros (background)
+    label_image[:] = 0
+
+    # Create an object spanning multiple chunks with different labels in each chunk
+    # Object spans z=(5:18), which crosses chunk boundary at z=8 and z=16
+    # Label it as 1 in first chunk (z=5:8), label 2 in middle chunk (z=8:16),
+    # label 3 in last chunk (z=16:18)
+    label_image[5:8, 2:4, 2:4] = 1
+    label_image[8:16, 2:4, 2:4] = 2
+    label_image[16:18, 2:4, 2:4] = 3
+
+    # Create a non-touching object in a different location (label 4)
+    label_image[10:15, 10:12, 10:12] = 4
+
+    # Find the z-boundary at z=8 (between first and second chunk)
+    z_boundary_8 = (slice(7, 9), slice(None), slice(None))
+
+    # Check touching labels at z=8 boundary
+    touching_at_8 = _find_touching_labels(z_boundary_8, label_path)
+
+    # Labels 1 and 2 should be touching at this boundary
+    touching_8_set = {tuple(sorted(pair)) for pair in touching_at_8.tolist()}
+    assert {(1, 2)} == touching_8_set
+
+    # Find the z-boundary at z=16 (between second and third chunk)
+    z_boundary_16 = (slice(15, 17), slice(None), slice(None))
+
+    # Check touching labels at z=16 boundary
+    touching_at_16 = _find_touching_labels(z_boundary_16, label_path)
+
+    # Labels 2 and 3 should be touching at this boundary
+    touching_16_set = {tuple(sorted(pair)) for pair in touching_at_16.tolist()}
+    assert {(2, 3)} == touching_16_set
