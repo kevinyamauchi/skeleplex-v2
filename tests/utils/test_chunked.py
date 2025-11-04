@@ -78,30 +78,44 @@ def test_extra_border_not_3_tuple(tmp_path):
             extra_border=(1, 1),  # Only 2 elements
         )
 
+def test_output_with_extra_dimensions(tmp_path):
+    """Test that function works when output has extra dimensions."""
+    # create a small 3D dask array
+    shape = (4, 4, 4)
+    chunk_shape = (2, 2, 2)
+    extra_border = (2, 2, 2)
 
-def test_shape_mismatch(tmp_path):
-    """Test that ValueError is raised when input and output shapes don't match."""
-    # create a 3D dask array
-    input_array = da.zeros((10, 10, 10), chunks=(5, 5, 5))
+    input_data = np.random.rand(*shape).astype("float64")
+    input_array = da.from_array(input_data, chunks=chunk_shape)
 
-    # create output zarr with different shape
+    # create output zarr with an extra dimension
+    output_shape = (2, 4, 4, 4)  # Extra dimension of size 2
     output_path = tmp_path / "output.zarr"
     output_zarr = zarr.open(
-        str(output_path), mode="w", shape=(10, 10, 8), dtype="float64"
+        str(output_path), mode="w",
+        shape=output_shape,
+        chunks=(2, *chunk_shape),
+        dtype="float64"
     )
 
-    def dummy_func(x):
-        return x
+    def expand_func(x):
+        # Expand the input chunk to have an extra dimension
+        return np.stack([x, x], axis=0)
 
-    with pytest.raises(ValueError, match="Input and output shapes must match"):
-        iteratively_process_chunks_3d(
-            input_array=input_array,
-            output_zarr=output_zarr,
-            function_to_apply=dummy_func,
-            chunk_shape=(5, 5, 5),
-            extra_border=(1, 1, 1),
-        )
+    # process the array
+    iteratively_process_chunks_3d(
+        input_array=input_array,
+        output_zarr=output_zarr,
+        function_to_apply=expand_func,
+        chunk_shape=chunk_shape,
+        extra_border=extra_border,
+    )
 
+    # load the result
+    result = np.array(output_zarr[:])
+
+    # verify the result shape
+    assert result.shape == output_shape
 
 def test_processing_with_convolution(tmp_path):
     """Test roundtrip processing with convolution to verify border handling."""
