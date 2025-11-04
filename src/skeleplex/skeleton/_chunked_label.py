@@ -1,6 +1,7 @@
 from functools import partial
 from itertools import product
 from multiprocessing import Lock, Value, get_context
+from multiprocessing.pool import ThreadPool
 from typing import Literal
 
 import numpy as np
@@ -9,6 +10,8 @@ from scipy.ndimage import binary_dilation, generate_binary_structure
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 from skimage.measure import label
+
+from skeleplex.utils import get_boundary_slices
 
 # Global variables to hold shared state in worker processes
 _offset_counter = None
@@ -348,3 +351,347 @@ def _make_label_mapping(
             label_mapping[label_value] = max_label_in_component
 
     return label_mapping
+
+
+def relabel_parallel(
+    label_image_path: str,
+    output_array_path: str,
+    chunk_shape: tuple[int, int, int],
+    label_mapping: dict[int, int],
+    n_processes: int,
+    pool_type: Literal["spawn", "fork", "forkserver", "thread"],
+) -> None:
+    """
+    Relabel a zarr array in parallel by applying a label mapping to chunks.
+
+    Parameters
+    ----------
+    label_image_path : str
+        Path to input zarr array.
+    output_array_path : str
+        Path to output zarr array (will be created if doesn't exist).
+    chunk_shape : tuple[int, int, int]
+        Shape of chunks to process in parallel.
+    label_mapping : dict[int, int]
+        Mapping from original labels to new labels.
+    n_processes : int
+        Number of parallel processes/threads.
+    pool_type : {'spawn', 'fork', 'forkserver', 'thread'}
+        Type of multiprocessing context to use.
+    """
+    # Open input zarr to get metadata
+    input_zarr = zarr.open(label_image_path, mode="r")
+    array_shape = input_zarr.shape
+    dtype = input_zarr.dtype
+
+    # Create the output zarr
+    _ = zarr.create_array(
+        output_array_path, shape=array_shape, chunks=chunk_shape, dtype=dtype
+    )
+
+    # Create list of chunk slices
+    chunk_slices_list = create_chunk_slices(array_shape, chunk_shape)
+
+    print(
+        f"Processing {len(chunk_slices_list)} chunks using {n_processes} "
+        f"{pool_type} workers"
+    )
+
+    # Process chunks in parallel
+    if pool_type == "thread":
+        pool = ThreadPool(n_processes)
+    else:
+        ctx = get_context(pool_type)
+        pool = ctx.Pool(n_processes)
+
+    # Create the processing function
+    process_func = partial(
+        _relabel_chunk,
+        input_path=label_image_path,
+        output_path=output_array_path,
+        label_mapping=label_mapping,
+    )
+
+    try:
+        pool.map(process_func, chunk_slices_list)
+    finally:
+        pool.close()
+        pool.join()
+
+
+def _relabel_chunk(
+    chunk_slice: tuple[slice, ...],
+    input_path: str,
+    output_path: str,
+    label_mapping: dict[int, int],
+) -> None:
+    """
+    Relabel a single chunk by applying the label mapping.
+
+    Parameters
+    ----------
+    chunk_slice : tuple of slice
+        Slice objects defining the chunk region.
+    input_path : str
+        Path to input zarr array.
+    output_path : str
+        Path to output zarr array.
+    label_mapping : dict[int, int]
+        Mapping from original labels to new labels.
+    """
+    # Open zarr arrays
+    input_zarr = zarr.open(input_path, mode="r")
+    output_zarr = zarr.open(output_path, mode="r+")
+
+    # Read chunk data
+    chunk_data = input_zarr[chunk_slice]
+
+    # Apply mapping
+    output_data = _apply_label_mapping(chunk_data, label_mapping)
+
+    # Write to output
+    output_zarr[chunk_slice] = output_data
+
+
+def _apply_label_mapping(
+    chunk_data: np.ndarray, label_mapping: dict[int, int]
+) -> np.ndarray:
+    """
+    Apply label mapping using lookup array (fancy indexing).
+
+    Parameters
+    ----------
+    chunk_data : np.ndarray
+        Array of label values.
+    label_mapping : dict[int, int]
+        Mapping from old labels to new labels.
+
+    Returns
+    -------
+    np.ndarray
+        Relabeled array.
+    """
+    if len(label_mapping) == 0:
+        return chunk_data.copy()
+
+    # Find which labels actually exist in this chunk
+    labels_in_chunk = np.unique(chunk_data)
+
+    # Filter mapping to only relevant labels
+    relevant_mapping = {k: v for k, v in label_mapping.items() if k in labels_in_chunk}
+
+    if len(relevant_mapping) == 0:
+        return chunk_data.copy()
+
+    # Create lookup table
+    max_label = chunk_data.max()
+    lookup = np.arange(max_label + 1, dtype=chunk_data.dtype)
+
+    # Update lookup for labels that need remapping
+    for old_label, new_label in relevant_mapping.items():
+        lookup[old_label] = new_label
+
+    # Apply mapping using fancy indexing
+    output_data = lookup[chunk_data]
+
+    return output_data
+
+
+def merge_touching_labels(
+    label_image_path: str,
+    output_image_path: str,
+    chunk_shape: tuple[int, int, int],
+    max_label_value: int,
+    n_processes: int,
+    pool_type: Literal["spawn", "fork", "forkserver", "thread"],
+) -> None:
+    """
+    Merge touching labels across chunk boundaries.
+
+    This function finds labels that touch at chunk boundaries, computes connected
+    components, and relabels all labels in each connected component to the maximum
+    label value in that component.
+
+    Parameters
+    ----------
+    label_image_path : str
+        Path to input zarr array.
+    output_image_path : str
+        Path to output zarr array (will be created if doesn't exist).
+    chunk_shape : tuple[int, int, int]
+        Shape of chunks to process in parallel.
+    max_label_value : int
+        Maximum label value in the entire image.
+    n_processes : int
+        Number of parallel processes/threads.
+    pool_type : {'spawn', 'fork', 'forkserver', 'thread'}
+        Type of multiprocessing context to use.
+    """
+    # Open input zarr to get array shape
+    input_zarr = zarr.open(label_image_path, mode="r")
+    array_shape = input_zarr.shape
+
+    print(f"Merging touching labels in array with shape {array_shape}")
+
+    # Get boundary slices
+    boundaries = get_boundary_slices(array_shape, chunk_shape)
+
+    print(f"Found {len(boundaries)} chunk boundaries")
+
+    # Handle case with no boundaries (single chunk or small array)
+    if len(boundaries) == 0:
+        print("No chunk boundaries found. Copying input to output.")
+        _copy_zarr_array(
+            label_image_path, output_image_path, chunk_shape, n_processes, pool_type
+        )
+        return
+
+    # Find touching labels at all boundaries in parallel
+    print(f"Finding touching labels using {n_processes} {pool_type} workers")
+
+    if pool_type == "thread":
+        pool = ThreadPool(n_processes)
+    else:
+        ctx = get_context(pool_type)
+        pool = ctx.Pool(n_processes)
+
+    # Create processing function for finding touching labels
+    process_func = partial(_find_touching_labels, label_image_path=label_image_path)
+
+    try:
+        results = pool.map(process_func, boundaries)
+    finally:
+        pool.close()
+        pool.join()
+
+    # Combine all touching pairs
+    all_touching_pairs = [arr for arr in results if len(arr) > 0]
+
+    if len(all_touching_pairs) == 0:
+        print("No touching labels found. Copying input to output.")
+        _copy_zarr_array(
+            label_image_path, output_image_path, chunk_shape, n_processes, pool_type
+        )
+        return
+
+    # Stack and remove duplicates
+    touching_pairs = np.vstack(all_touching_pairs)
+    touching_pairs = np.unique(touching_pairs, axis=0)
+
+    print(f"Found {len(touching_pairs)} unique touching label pairs")
+
+    # Create label mapping based on connected components
+    label_mapping = _make_label_mapping(touching_pairs, max_label_value)
+
+    print(f"Created mapping for {len(label_mapping)} labels")
+
+    if len(label_mapping) == 0:
+        print("No labels need remapping. Copying input to output.")
+        _copy_zarr_array(
+            label_image_path, output_image_path, chunk_shape, n_processes, pool_type
+        )
+        return
+
+    # Apply relabeling in parallel
+    print("Applying relabeling to all chunks")
+    relabel_parallel(
+        label_image_path=label_image_path,
+        output_array_path=output_image_path,
+        chunk_shape=chunk_shape,
+        label_mapping=label_mapping,
+        n_processes=n_processes,
+        pool_type=pool_type,
+    )
+
+    print("Merging complete")
+
+
+def _copy_zarr_array(
+    input_path: str,
+    output_path: str,
+    chunk_shape: tuple[int, int, int],
+    n_processes: int,
+    pool_type: Literal["spawn", "fork", "forkserver", "thread"],
+) -> None:
+    """
+    Copy a zarr array from input to output chunk-by-chunk.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to input zarr array.
+    output_path : str
+        Path to output zarr array.
+    chunk_shape : tuple[int, int, int]
+        Chunk shape for output array.
+    n_processes : int
+        Number of parallel processes/threads.
+    pool_type : {'spawn', 'fork', 'forkserver', 'thread'}
+        Type of multiprocessing context to use.
+    """
+    # Open input to get metadata
+    input_zarr = zarr.open(input_path, mode="r")
+    array_shape = input_zarr.shape
+    dtype = input_zarr.dtype
+
+    # Create output array
+    _ = zarr.open(
+        output_path,
+        mode="w",
+        shape=array_shape,
+        chunks=chunk_shape,
+        dtype=dtype,
+    )
+
+    # Get chunk slices
+    chunk_slices_list = create_chunk_slices(array_shape, chunk_shape)
+
+    print(
+        f"Copying {len(chunk_slices_list)} chunks using"
+        f"{n_processes} {pool_type} workers"
+    )
+
+    # Create pool
+    if pool_type == "thread":
+        pool = ThreadPool(n_processes)
+    else:
+        ctx = get_context(pool_type)
+        pool = ctx.Pool(n_processes)
+
+    # Create processing function
+    process_func = partial(
+        _copy_chunk,
+        input_path=input_path,
+        output_path=output_path,
+    )
+
+    try:
+        pool.map(process_func, chunk_slices_list)
+    finally:
+        pool.close()
+        pool.join()
+
+
+def _copy_chunk(
+    chunk_slice: tuple[slice, ...],
+    input_path: str,
+    output_path: str,
+) -> None:
+    """
+    Copy a single chunk from input to output.
+
+    Parameters
+    ----------
+    chunk_slice : tuple of slice
+        Slice objects defining the chunk region.
+    input_path : str
+        Path to input zarr array.
+    output_path : str
+        Path to output zarr array.
+    """
+    # Open zarr arrays
+    input_zarr = zarr.open(input_path, mode="r")
+    output_zarr = zarr.open(output_path, mode="r+")
+
+    # Copy chunk
+    output_zarr[chunk_slice] = input_zarr[chunk_slice]

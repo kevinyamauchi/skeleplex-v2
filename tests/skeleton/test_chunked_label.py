@@ -1,7 +1,11 @@
 import numpy as np
 import zarr
 
-from skeleplex.skeleton import label_chunks_parallel
+from skeleplex.skeleton import (
+    label_chunks_parallel,
+    merge_touching_labels,
+    relabel_parallel,
+)
 from skeleplex.skeleton._chunked_label import _find_touching_labels, _make_label_mapping
 
 
@@ -161,3 +165,176 @@ def test_make_label_mapping():
     }
 
     assert mapping == expected, f"Expected {expected}, got {mapping}"
+
+
+def test_relabel_parallel(tmp_path):
+    """Test relabeling objects that span multiple chunks."""
+    array_shape = (20, 20, 20)
+    chunk_shape = (8, 8, 8)
+
+    # Create input zarr array
+    input_path = tmp_path / "input_labels.zarr"
+    label_image = zarr.open(
+        str(input_path),
+        mode="w",
+        shape=array_shape,
+        chunks=chunk_shape,
+        dtype=np.uint16,
+    )
+
+    # Initialize with zeros (background)
+    label_image[:] = 0
+
+    # Create an object spanning multiple chunks with different labels in each chunk
+    # Object spans z=(5:18), which crosses chunk boundary at z=8 and z=16
+    # Label as 1, 2, 3 in different chunks
+    label_image[5:8, 2:4, 2:4] = 1
+    label_image[8:16, 2:4, 2:4] = 2
+    label_image[16:18, 2:4, 2:4] = 3
+
+    # Create an object that doesn't need relabeling (label 10, stays as 10)
+    label_image[10:15, 10:12, 10:12] = 10
+
+    # Directly specify label mapping: 1 -> 3, 2 -> 3
+    # This simulates what would happen after finding
+    # touching labels and computing connected components
+    label_mapping = {1: 3, 2: 3}
+
+    # Apply relabeling in parallel
+    output_path = tmp_path / "output_labels.zarr"
+    relabel_parallel(
+        label_image_path=str(input_path),
+        output_array_path=str(output_path),
+        chunk_shape=chunk_shape,
+        label_mapping=label_mapping,
+        n_processes=2,
+        pool_type="spawn",
+    )
+
+    # Verify output
+    output_image = np.asarray(zarr.open(str(output_path), mode="r"))
+
+    # Check that the spanning object is now all labeled as 3
+    assert np.all(
+        output_image[5:8, 2:4, 2:4] == 3
+    ), "First part should be relabeled to 3"
+    assert np.all(
+        output_image[8:16, 2:4, 2:4] == 3
+    ), "Middle part should be relabeled to 3"
+    assert np.all(output_image[16:18, 2:4, 2:4] == 3), "Last part should already be 3"
+
+    # Check that label 10 remains unchanged
+    assert np.all(
+        output_image[10:15, 10:12, 10:12] == 10
+    ), "Label 10 should remain unchanged"
+
+    # Check that the background remains 0
+    assert np.all(output_image[label_image == 0] == 0), "Background should remain 0"
+
+
+def test_merge_touching_labels(tmp_path):
+    """Test merging touching labels across chunk boundaries."""
+    array_shape = (20, 20, 20)
+    chunk_shape = (8, 8, 8)
+
+    # Create input zarr array
+    input_path = tmp_path / "input_labels.zarr"
+    label_image = zarr.open(
+        str(input_path),
+        mode="w",
+        shape=array_shape,
+        chunks=chunk_shape,
+        dtype=np.uint16,
+    )
+
+    # Initialize with zeros (background)
+    label_image[:] = 0
+
+    # Create an object spanning multiple chunks with different labels in each chunk
+    # Object spans z=(5:18), which crosses chunk boundary at z=8 and z=16
+    # Label as 1, 2, 3 in different chunks
+    label_image[5:8, 2:4, 2:4] = 1
+    label_image[8:16, 2:4, 2:4] = 2
+    label_image[16:18, 2:4, 2:4] = 3
+
+    # Create an object that doesn't need relabeling (label 10, stays as 10)
+    label_image[10:15, 10:12, 10:12] = 10
+
+    # Apply merging
+    output_path = tmp_path / "output_labels.zarr"
+    merge_touching_labels(
+        label_image_path=str(input_path),
+        output_image_path=str(output_path),
+        chunk_shape=chunk_shape,
+        max_label_value=10,
+        n_processes=2,
+        pool_type="spawn",
+    )
+
+    # Verify output
+    output_image = np.asarray(zarr.open(str(output_path), mode="r"))
+
+    # Check that the spanning object is now all labeled as 3 (max of {1, 2, 3})
+    assert np.all(
+        output_image[5:8, 2:4, 2:4] == 3
+    ), "First part should be relabeled to 3"
+    assert np.all(
+        output_image[8:16, 2:4, 2:4] == 3
+    ), "Middle part should be relabeled to 3"
+    assert np.all(output_image[16:18, 2:4, 2:4] == 3), "Last part should already be 3"
+
+    # Check that label 10 remains unchanged (not touching anything)
+    assert np.all(
+        output_image[10:15, 10:12, 10:12] == 10
+    ), "Label 10 should remain unchanged"
+
+    # Check that the background remains 0
+    assert np.all(output_image[label_image == 0] == 0), "Background should remain 0"
+
+
+def test_merge_touching_labels_no_merging_needed(tmp_path):
+    """Test that arrays with no touching labels are copied correctly."""
+    array_shape = (20, 20, 20)
+    chunk_shape = (8, 8, 8)
+
+    # Create input zarr array
+    input_path = tmp_path / "input_labels.zarr"
+    label_image = zarr.open(
+        str(input_path),
+        mode="w",
+        shape=array_shape,
+        chunks=chunk_shape,
+        dtype=np.uint16,
+    )
+
+    # Initialize with zeros (background)
+    label_image[:] = 0
+
+    # Create objects that don't cross chunk boundaries
+    # Object 1: entirely within first chunk (z < 8)
+    label_image[2:5, 2:4, 2:4] = 1
+
+    # Object 2: entirely within second chunk (8 <= z < 16)
+    label_image[10:13, 10:12, 10:12] = 2
+
+    # Object 3: entirely within another region
+    label_image[17:19, 5:7, 5:7] = 3
+
+    # Save a copy of input for comparison
+    input_copy = label_image[:].copy()
+
+    # Apply merging
+    output_path = tmp_path / "output_labels.zarr"
+    merge_touching_labels(
+        label_image_path=str(input_path),
+        output_image_path=str(output_path),
+        chunk_shape=chunk_shape,
+        max_label_value=3,
+        n_processes=2,
+        pool_type="spawn",
+    )
+
+    # Verify output
+    output_image = zarr.open(str(output_path), mode="r")
+
+    np.testing.assert_array_equal(input_copy, output_image)
