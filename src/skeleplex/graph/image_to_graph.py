@@ -14,7 +14,9 @@ from skeleplex.graph.spline import B3Spline
 
 
 def image_to_graph_skan(
-    skeleton_image: np.ndarray, max_spline_knots: int = 10
+    skeleton_image: np.ndarray,
+    max_spline_knots: int = 10,
+    image_voxel_size_um: float = 1,
 ) -> nx.MultiGraph:
     """Convert a skeleton image to a graph using skan.
 
@@ -28,9 +30,11 @@ def image_to_graph_skan(
         If the number of data points in the branch is less than this number,
         the spline will use n_data_points - 1 knots.
         See the splinebox Spline class docs for more information.
+    image_voxel_size_um  : float or array of float
+        Spacing of the voxels. Used to transform graph coordinates to um.
     """
     # make the skeleton
-    skeleton = SkanSkeleton(skeleton_image=skeleton_image)
+    skeleton = SkanSkeleton(skeleton_image=skeleton_image, spacing=image_voxel_size_um)
     summary_table = summarize(skeleton, separator="_")
 
     # get all of the nodes
@@ -51,6 +55,7 @@ def image_to_graph_skan(
         # todo: factor our to spline module
         # todo: reconsider how the number of knots is set
         spline_path = skeleton.path_coordinates(index)
+        spline_path *= image_voxel_size_um  # scale to um
         n_points = len(spline_path)
         if n_points <= max_spline_knots:
             n_spline_knots = n_points - 1
@@ -76,7 +81,9 @@ def image_to_graph_skan(
     # add the node coordinates
     new_node_data = {}
     for node_index, node_data in skeleton_graph.nodes(data=True):
-        node_data[NODE_COORDINATE_KEY] = np.asarray(skeleton.coordinates[node_index])
+        node_coordinate = np.asarray(skeleton.coordinates[node_index])
+        node_coordinate *= image_voxel_size_um  # scale to um
+        node_data[NODE_COORDINATE_KEY] = node_coordinate
         new_node_data[node_index] = node_data
 
     nx.set_node_attributes(skeleton_graph, new_node_data)
