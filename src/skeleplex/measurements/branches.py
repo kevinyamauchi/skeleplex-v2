@@ -4,6 +4,7 @@ import networkx as nx
 import h5py
 import numpy as np
 import skimage as ski
+from skimage.morphology import binary_dilation, disk
 import torch
 from tqdm import tqdm
 import concurrent.futures
@@ -14,6 +15,7 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 from skeleplex.measurements.utils import grey2rgb, radius_from_area
 from skeleplex.graph.skeleton_graph import SkeletonGraph
+from skeleplex.measurements.lumen_classifier import ResNet3ClassClassifier
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,11 +24,12 @@ logger.setLevel(logging.INFO)
 def filter_and_segment_lumen(
     data_path,
     save_path,
-    sam_checkpoint_path,
-    resnet_predictor,
+    sam_checkpoint_path: str | None = None,
+    resnet_predictor: ResNet3ClassClassifier | None = None,
     eccentricity_thresh=0.7,
     circularity_thresh=0.5,
     find_lumen=True,
+    sam_quality_threshold=0.1,
 ):
     """
     Filter and segment the lumen in the image slices.
@@ -77,10 +80,12 @@ def filter_and_segment_lumen(
         Path to the input data directory containing .h5 files.
     save_path : str
         Path to the output directory where filtered .h5 files will be saved.
-    sam_checkpoint_path : str
+    sam_checkpoint_path : str, optional
         Path to the SAM2 checkpoint file.
-    resnet_predictor : ResNet3ClassClassifier
+        only required if find_lumen is True.
+    resnet_predictor : ResNet3ClassClassifier, optional
         ResNet classifier for predicting classes.
+        Only required if find_lumen is True.
     eccentricity_thresh : float
         Eccentricity threshold for filtering slices.
     circularity_thresh : float
@@ -88,22 +93,13 @@ def filter_and_segment_lumen(
     find_lumen : bool
         Whether to find the lumen using SAM2 or just to filter for
         eccentricity and circularity.
-
+    sam_quality_threshold : float
+        Minimum SAM quality score to consider a mask for classification.
 
     """
     if not os.path.exists(save_path):
         os.makedirs(save_path)
         logger.info(f"Created directory: {save_path}")
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # viewer = napari.Viewer()
-    sam2_checkpoint = sam_checkpoint_path
-    model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
-    sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
-    predictor = SAM2ImagePredictor(sam2_model)
-
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
 
     files = [f for f in os.listdir(data_path) if f.endswith(".h5")]
     # only do those that are npot in the save_path
@@ -158,71 +154,19 @@ def filter_and_segment_lumen(
                 continue
 
             if find_lumen:
-                # Segment using SAM2
-                image_slice_rgb = grey2rgb(image_slice)
-                predictor.set_image(image_slice_rgb)
-                sam_point = np.array([[h // 2, w // 2]])
-                sam_label = np.array([1])
-                sam_mask, _, _ = predictor.predict(
-                    point_coords=sam_point,
-                    point_labels=sam_label,
-                    multimask_output=True,
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                sam2_checkpoint = sam_checkpoint_path
+                model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+                sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
+                predictor = SAM2ImagePredictor(sam2_model)
+
+                label_slice = find_lumen_in_slice(
+                    image_slice,
+                    label_slice,
+                    predictor,
+                    resnet_predictor,
+                    sam_quality_threshold,
                 )
-
-                mask_img1 = image_slice * sam_mask[0]
-                mask_img2 = image_slice * sam_mask[1]
-                mask_img3 = image_slice * sam_mask[2]
-
-                # crop to bouynding box
-                min_x, min_y, max_x, max_y = ski.measure.regionprops(
-                    sam_mask[0].astype(int)
-                )[0].bbox
-                mask_img1 = mask_img1[min_x:max_x, min_y:max_y]
-
-                min_x, min_y, max_x, max_y = ski.measure.regionprops(
-                    sam_mask[1].astype(int)
-                )[0].bbox
-                mask_img2 = mask_img2[min_x:max_x, min_y:max_y]
-
-                min_x, min_y, max_x, max_y = ski.measure.regionprops(
-                    sam_mask[2].astype(int)
-                )[0].bbox
-                mask_img3 = mask_img3[min_x:max_x, min_y:max_y]
-
-                preds = []
-                for j, mask_img in enumerate([mask_img1, mask_img2, mask_img3]):
-                    pred_class, conf = resnet_predictor.predict(mask_img)
-                    preds.append({"index": j, "class": pred_class, "conf": conf})
-
-                # Initialize label mask
-                label_with_lumen = np.zeros_like(label_slice, dtype=np.uint8)
-                logger.info([p["class"] for p in preds])
-
-                # Handle lumen (class 0)
-                lumen_preds = [p for p in preds if p["class"] == 0]
-                if lumen_preds:
-                    logger.info("Found lumen")
-                    best_lumen = max(lumen_preds, key=lambda x: x["conf"])
-                    label_with_lumen[sam_mask[best_lumen["index"]] == 1] = 2
-
-                # Handle branches (class 1)
-                class1_preds = [p for p in preds if p["class"] == 1]
-                if class1_preds:
-                    best_class1 = max(class1_preds, key=lambda x: x["conf"])
-                    label_with_lumen[
-                        (sam_mask[best_class1["index"]] == 1) & (label_with_lumen == 0)
-                    ] = 1
-                else:
-                    # If no class 1 was found, but something is labeled in the
-                    # original slice, fill in as class 1
-                    label_with_lumen[(label_slice != 0) & (label_with_lumen == 0)] = 1
-
-                # Handle full match for class 2 (e.g., all bad)
-                if all(p["class"] == 2 for p in preds):
-                    label_with_lumen = label_slice.copy()
-
-                label_slice = label_with_lumen
-
             label_slices_filt[i] = label_slice
 
         # Remove invalid slices
@@ -232,6 +176,202 @@ def filter_and_segment_lumen(
         with h5py.File(os.path.join(save_path, file), "w") as f:
             f.create_dataset("image", data=image_slice_filt)
             f.create_dataset("segmentation", data=label_slices_filt)
+
+
+def find_lumen_in_slice(
+    image_slice: np.ndarray,
+    label_slice: np.ndarray,
+    predictor: SAM2ImagePredictor,
+    resnet_predictor: ResNet3ClassClassifier,
+    sam_quality_threshold=0.1,
+) -> np.ndarray:
+    """
+    Find lumen and branch labels in a single 2D image slice.
+
+    Uses a SAM-based segmentation followed by a ResNet-based mask classifier.
+    This function performs the following high-level steps:
+    1. Converts the grayscale image slice to RGB and runs the provided SAM predictor
+        with a single central point to obtain up to three candidate masks and
+        associated quality scores.
+    2. For each SAM mask, creates a masked image (image * mask), crops it to the
+        mask's bounding box, and sends the cropped mask image to the provided
+        resnet_predictor to obtain a predicted class and confidence.
+    3. Builds a new label image where:
+        - label value 0 denotes background,
+        - label value 1 denotes branch tissue,
+        - label value 2 denotes lumen.
+        Classification decisions follow these rules:
+        - Only masks with SAM quality > 0.1 are passed to the ResNet classifier.
+        - If no masks pass the quality threshold, the original label_slice is
+            returned unchanged.
+        - If one or more masks are predicted as lumen (class 0), the highest-quality
+            lumen mask is used to mark lumen (value 2). If that lumen mask touches the
+            background (according to lumen_touches_background) and another lumen mask
+            exists, the second-best lumen mask will be tried.
+        - Branch masks (class 1) are chosen by quality. If the best class-1 mask has
+            quality < 0.5, branch pixels are copied from the original segmentation;
+            otherwise the SAM class-1 mask is used for branch labeling.
+        - If all candidate predictions are class 2 (non-lumen, non-branch), or if
+            the final lumen segmentation touches the background, the original
+            segmentation is returned.
+    4. Returns the label slice updated with lumen and branch annotations.
+    Parameters.
+    ----------
+    image_slice : numpy.ndarray
+            2D grayscale image array for the current slice (H x W).
+    label_slice : numpy.ndarray
+            2D integer label array for the current slice (H x W). Non-zero values are
+            considered tissue/structures that can be re-assigned to branch (1) or
+            lumen (2).
+    predictor : object
+            SAM predictor instance providing:
+            - set_image(image_rgb) to set the image,
+            - predict(point_coords, point_labels, multimask_output=True) to return
+                (masks, scores, ...) where masks is an array-like of binary masks and
+                scores (sam_quality) is an array-like of quality values.
+    resnet_predictor : object
+            Classifier for cropped mask images. Must implement:
+            - predict(cropped_mask_image) -> (pred_class, confidence)
+            Where pred_class is an integer code (0 for lumen, 1 for branch, 2 for other)
+            and confidence is a float confidence score.
+    sam_quality_threshold : float
+            Minimum SAM quality score to consider a mask for classification.
+
+    Returns
+    -------
+    numpy.ndarray
+            A 2D label array (same shape as label_slice) where lumen pixels are set to
+            2, branch pixels to 1, and background to 0. In cases where SAM/resnet-based
+            postprocessing is deemed unreliable, the original label_slice is returned
+            unchanged.
+
+    Notes
+    -----
+    - The behavior and thresholds (SAM quality > 0.1 to classify, class-1 quality
+        threshold 0.5) are tuned heuristics that can be adjusted if needed.
+
+
+    """
+    # Segment using SAM2
+    h, w = image_slice.shape
+    image_slice_rgb = grey2rgb(image_slice)
+    predictor.set_image(image_slice_rgb)
+    sam_point = np.array([[h // 2, w // 2]])
+    sam_label = np.array([1])
+    sam_mask, sam_quality, _ = predictor.predict(
+        point_coords=sam_point,
+        point_labels=sam_label,
+        multimask_output=True,
+    )
+
+    mask_img1 = image_slice * sam_mask[0]
+    mask_img2 = image_slice * sam_mask[1]
+    mask_img3 = image_slice * sam_mask[2]
+
+    # crop to bounding box
+    min_x, min_y, max_x, max_y = ski.measure.regionprops(sam_mask[0].astype(int))[
+        0
+    ].bbox
+    mask_img1 = mask_img1[min_x:max_x, min_y:max_y]
+
+    min_x, min_y, max_x, max_y = ski.measure.regionprops(sam_mask[1].astype(int))[
+        0
+    ].bbox
+    mask_img2 = mask_img2[min_x:max_x, min_y:max_y]
+
+    min_x, min_y, max_x, max_y = ski.measure.regionprops(sam_mask[2].astype(int))[
+        0
+    ].bbox
+    mask_img3 = mask_img3[min_x:max_x, min_y:max_y]
+
+    label_with_lumen = np.zeros_like(label_slice, dtype=np.uint8)
+    preds = []
+    mask_imgs = [mask_img1, mask_img2, mask_img3]
+
+    for j, mask_img in enumerate(mask_imgs):
+        # Only classify if SAM mask quality is above threshold
+        if sam_quality[j] > sam_quality_threshold:
+            pred_class, conf = resnet_predictor.predict(mask_img)
+            preds.append(
+                {
+                    "index": j,
+                    "class": pred_class,
+                    "conf": conf,
+                    "quality": sam_quality[j],
+                }
+            )
+        else:
+            logger.info(
+                f"Skipping SAM mask {j},\n" f"due to low quality ({sam_quality[j]:.2f})"
+            )
+
+    # If no good-quality masks, fall back to original segmentation
+    if len(preds) == 0:
+        logger.info("No SAM masks with quality > 0.5," "using original segmentation.")
+        label_with_lumen = label_slice.copy()
+    else:
+        logger.info([p["class"] for p in preds])
+
+        # Handle lumen (class 0)
+        lumen_preds = [p for p in preds if p["class"] == 0]
+        if lumen_preds:
+            logger.info("Found lumen")
+            best_lumen = max(lumen_preds, key=lambda x: x["quality"])
+            label_with_lumen[sam_mask[best_lumen["index"]] == 1] = 2
+
+        # Handle branches (class 1)
+        class1_preds = [p for p in preds if p["class"] == 1]
+        if class1_preds:
+            best_class1 = max(class1_preds, key=lambda x: x["quality"])
+            if best_class1["quality"] < 0.5:
+                logger.info(
+                    "Low quality for class 1 mask,"
+                    "assigning class 1 to original segmentation"
+                )
+                mask = (label_slice != 0) & (label_with_lumen == 0)
+                label_with_lumen[mask] = 1
+            else:
+                mask = (sam_mask[best_class1["index"]] == 1) & (label_with_lumen == 0)
+                label_with_lumen[mask] = 1
+        else:
+            # If no class 1 was found, use original segmentation
+            label_with_lumen[(label_slice != 0) & (label_with_lumen == 0)] = 1
+
+        # Handle case where all are bad (class 2)
+        if all(p["class"] == 2 for p in preds):
+            label_with_lumen = label_slice.copy()
+        if lumen_touches_background(label_with_lumen):
+            logger.info(
+                "Lumen touches background," "reverting to original segmentation."
+            )
+            label_with_lumen = label_slice.copy()
+
+    label_slice = label_with_lumen
+    return label_slice
+
+
+def lumen_touches_background(label_slice):
+    """Check if lumen touches background in a label slice.
+
+    Parameters
+    ----------
+    label_slice : numpy.ndarray
+        2D array representing the label slice.
+
+    Returns
+    -------
+    bool
+        True if lumen touches background, False otherwise.
+
+    """
+    lumen_label = 2
+    background_label = 0
+    lumen_mask = label_slice == lumen_label
+    background_mask = label_slice == background_label
+    # Dilate lumen mask to ensure touching
+    dilated_lumen = binary_dilation(lumen_mask, footprint=disk(1))
+    touching = np.any(dilated_lumen & background_mask)
+    return touching
 
 
 def filter_for_iterative_lumens(data_path, save_path):
