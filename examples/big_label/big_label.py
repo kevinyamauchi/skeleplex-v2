@@ -60,6 +60,7 @@ if __name__ == "__main__":
         backend="cupy",
     )
 
+    # merge touching labels across chunk boundaries
     merge_touching_labels(
         label_image_path=chunkwise_labeled_path,
         output_image_path=final_labeled_path,
