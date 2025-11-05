@@ -1,4 +1,8 @@
-"""Example of labeling an image lazily in parallel."""
+"""Example of labeling an image lazily in parallel.
+
+If you do not have cupy installed, you can change the backend to "cpu" to
+run on the CPU instead.
+"""
 
 import napari
 import numpy as np
