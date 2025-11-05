@@ -30,6 +30,7 @@ def filter_and_segment_lumen(
     circularity_thresh=0.5,
     find_lumen=True,
     sam_quality_threshold=0.1,
+    segmentation_key: str = "segmentation",
 ):
     """
     Filter and segment the lumen in the image slices.
@@ -95,7 +96,8 @@ def filter_and_segment_lumen(
         eccentricity and circularity.
     sam_quality_threshold : float
         Minimum SAM quality score to consider a mask for classification.
-
+    segmentation_key : str
+        The h5 dataset key to use for the segmentation slices.
     """
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -111,7 +113,7 @@ def filter_and_segment_lumen(
 
         with h5py.File(os.path.join(data_path, file), "r") as f:
             image_slices = f["image"][:]
-            segmentation_slices = f["segmentation"][:] != 0
+            segmentation_slices = f[segmentation_key][:] != 0
 
         label_slices_filt = np.zeros_like(segmentation_slices, dtype=np.uint8)
         index_to_remove = []
