@@ -96,6 +96,9 @@ def compute_level(graph: nx.DiGraph, origin: int):
     The level of a node is the shortest path length from the origin node.
     The level of an edge is the level of its start node.
 
+    The level is stored at the key specified by
+    skeleplex.graph.constants.GENERATION_KEY.
+
     Parameters
     ----------
     graph : nx.DiGraph

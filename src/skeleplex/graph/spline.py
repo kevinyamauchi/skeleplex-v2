@@ -104,15 +104,6 @@ class B3Spline:
             positions_t = self.model.arc_length_to_parameter(
                 positions * self.arc_length, atol=atol
             )
-        if approx:
-            positions_t = positions * (self.model.M - 1)
-            # error computation is expensive, comment out for now
-            # error = self.model.arc_length(positions_t) - (positions * self.arc_length)
-            positions_t = np.asarray(positions_t)
-        else:
-            positions_t = self.model.arc_length_to_parameter(
-                positions * self.arc_length, atol=atol
-            )
         # For single values, splinebox's eval expects a float
         # This recasts the value to a float if positions_t is a single value
         if positions_t.ndim == 0:
@@ -148,8 +139,8 @@ class B3Spline:
         self,
         volume: np.ndarray,
         positions: np.ndarray,
-        grid_shape: tuple[int, int] = (10, 10),
-        grid_spacing: tuple[float, float] = (1, 1),
+        grid_shape_um: tuple[int, int] = (10, 10),
+        grid_spacing_um: tuple[float, float] = (1, 1),
         moving_frame_method: str = "bishop",
         sample_interpolation_order: int = 3,
         sample_fill_value: float = np.nan,
@@ -165,11 +156,11 @@ class B3Spline:
         positions : np.ndarray
             (n,) array of positions to evaluate the spline at.
             The positions are normalized to the range [0, 1].
-        grid_shape : tuple[int, int]
-            The number of pixels along each axis of the resulting 2D image.
+        grid_shape_um : tuple[int, int]
+            The length along each axis of the resulting 2D image in microns.
             Default value is (10, 10).
-        grid_spacing : tuple[float, float]
-            Spacing between points in the sampling grid.
+        grid_spacing_um : tuple[float, float]
+            Spacing between points in the sampling grid in microns.
             Default value is (1, 1).
         moving_frame_method : str
             The method to use for generating the moving frame.
@@ -194,47 +185,48 @@ class B3Spline:
 
         # generate the grid of points for sampling the image
         # (shape (w, h, 3))
-        sampling_grid = generate_2d_grid(
-            grid_shape=grid_shape, grid_spacing=grid_spacing
+        sampling_grid_um = generate_2d_grid(
+            grid_shape=grid_shape_um, grid_spacing=grid_spacing_um
         )
 
         # reshape the sampling grid to be a list of coordinates
-        grid_coords = sampling_grid.reshape(-1, 3)
+        grid_coords_um = sampling_grid_um.reshape(-1, 3)
 
         # apply each orientation to the grid for each position and store the result
         rotated = []
         for frame in moving_frame:
             rotation_matrix = np.column_stack([frame[0], frame[1], frame[2]])
             orientation = Rotation.from_matrix(rotation_matrix)
-            rotated.append(orientation.apply(grid_coords))
+            rotated.append(orientation.apply(grid_coords_um))
+
+        rotated_um = np.stack(rotated, axis=1)
+        rotated_vx = rotated_um / np.array(image_voxel_size_um)
 
         # get the coordinates of the points on the spline to center
         # the sampling grid for the 2D image.
-        sample_centroid_coordinates = positions = self.eval(
+        sample_centroid_coordinates = self.eval(
             positions=positions,
             approx=approx,
         )
-
-        # transform the grid to the image space
-        sample_centroid_coordinates = sample_centroid_coordinates / np.array(
+        sample_centroid_coordinates_vx = sample_centroid_coordinates / np.array(
             image_voxel_size_um
         )
 
         # shift the rotated points to be centered on the spline
-        rotated_shifted = np.stack(rotated, axis=1) + sample_centroid_coordinates
-        placed_sample_grids = rotated_shifted.reshape(-1, *sampling_grid.shape)
+        rotated_shifted_vx = rotated_vx + sample_centroid_coordinates_vx
+        placed_sample_grids_vx = rotated_shifted_vx.reshape(-1, *sampling_grid_um.shape)
 
         if type(volume) is da.Array:
             return sample_volume_at_coordinates_lazy(
                 volume=volume,
-                coordinates=placed_sample_grids,
+                coordinates=placed_sample_grids_vx,
                 interpolation_order=sample_interpolation_order,
                 fill_value=sample_fill_value,
             )
         else:
             return sample_volume_at_coordinates(
                 volume=volume,
-                coordinates=placed_sample_grids,
+                coordinates=placed_sample_grids_vx,
                 interpolation_order=sample_interpolation_order,
                 fill_value=sample_fill_value,
             )

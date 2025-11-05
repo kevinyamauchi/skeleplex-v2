@@ -357,6 +357,9 @@ def skeleton_image_to_graph(
     them as node attributes in the graph. Edge paths are attached as
     edge attributes.
 
+    The node coordinates and edge path coordinates are scaled to microns
+    using the provided image_voxel_size_um.
+
     Parameters
     ----------
     skeleton_image : dask.array.Array
@@ -416,6 +419,7 @@ def skeleton_image_to_graph(
         node_dst = row.node_id_dst
 
         # path coordinates are not scaled to voxel size.
+        # here we scale them to microns
         edge_coords = skel_obj.path_coordinates(index)
         edge_coords = edge_coords * image_voxel_size_um  # scale to um
 

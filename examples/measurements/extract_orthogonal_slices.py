@@ -34,7 +34,7 @@ def main():  # noqa: D103
         skeleton_graph.sample_volume_slices_from_spline_parallel(
             volume_path=volume_path,
             slice_spacing=0.1,
-            slice_size=20,
+            slice_size_um=20,
             segmentation_path=segmentation_path,
         )
     )
