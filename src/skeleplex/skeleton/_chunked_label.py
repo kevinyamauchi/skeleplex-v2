@@ -345,6 +345,80 @@ def _find_touching_labels(
     return result
 
 
+def _find_touching_labels_gpu(
+    region_slice: tuple[slice, slice, slice], label_image_path: str
+) -> np.ndarray:
+    """Find pairs of labels that are touching within a region using 26-connectivity.
+
+    GPU-accelerated version using CuPy.
+
+    Parameters
+    ----------
+    region_slice: tuple[slice, slice, slice]
+        slice objects defining the region to check
+    label_image_path: str
+        path to zarr array containing labeled image
+
+    Returns
+    -------
+    np.ndarray
+        (n_pairs, 2) array where each row is [label_A, label_B]
+        with label_A < label_B. Returns empty (0, 2) array if no touching pairs.
+    """
+    import cupy as cp
+    from cupyx.scipy.ndimage import binary_dilation, generate_binary_structure
+
+    # Load the region from zarr
+    label_image = zarr.open(str(label_image_path), mode="r")
+    region = label_image[region_slice]
+
+    # Transfer to GPU
+    region_gpu = cp.asarray(region)
+
+    # Get unique labels in the region (exclude 0 which is background)
+    unique_labels = cp.unique(region_gpu)
+    unique_labels = unique_labels[unique_labels != 0]
+
+    # Create 26-connectivity structure (3D, connectivity=3 includes all diagonals)
+    connectivity_structure = generate_binary_structure(3, 3)
+
+    # Set to store unique touching pairs
+    touching_pairs = set()
+
+    # For each label, find what it touches
+    for label_A in unique_labels:
+        # Create binary mask for this label
+        binary_mask = region_gpu == label_A
+
+        # Dilate by 1 voxel in all 26 directions
+        dilated_mask = binary_dilation(binary_mask, structure=connectivity_structure)
+
+        # Find labels in the dilated region
+        touching_region = region_gpu[dilated_mask]
+        touching_labels = cp.unique(touching_region)
+
+        # Exclude the label itself and background (0)
+        touching_labels = touching_labels[
+            (touching_labels != label_A) & (touching_labels != 0)
+        ]
+
+        # Transfer touching_labels back to CPU for set operations
+        touching_labels_cpu = cp.asnumpy(touching_labels)
+        label_A_cpu = int(cp.asnumpy(label_A))
+
+        # Add pairs (always store as min, max to avoid duplicates)
+        for label_B in touching_labels_cpu:
+            pair = (min(label_A_cpu, label_B), max(label_A_cpu, label_B))
+            touching_pairs.add(pair)
+
+    # Convert to numpy array
+    if len(touching_pairs) == 0:
+        return np.empty((0, 2), dtype=region.dtype)
+
+    result = np.array(list(touching_pairs), dtype=region.dtype)
+    return result
+
+
 def _make_label_mapping(
     touching_pairs: np.ndarray, max_label_value: int
 ) -> dict[int, int]:
@@ -576,6 +650,7 @@ def merge_touching_labels(
     max_label_value: int,
     n_processes: int,
     pool_type: Literal["spawn", "fork", "forkserver", "thread"],
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> None:
     """
     Merge touching labels across chunk boundaries.
@@ -598,6 +673,9 @@ def merge_touching_labels(
         Number of parallel processes/threads.
     pool_type : {'spawn', 'fork', 'forkserver', 'thread'}
         Type of multiprocessing context to use.
+    backend : {'cpu', 'cupy'}, default='cpu'
+        Backend to use for finding touching labels. 'cpu' uses CPU-based.
+        'cupy' uses GPU-based with CuPy. Default is 'cpu'.
     """
     # Open input zarr to get array shape
     input_zarr = zarr.open(label_image_path, mode="r")
@@ -628,7 +706,14 @@ def merge_touching_labels(
         pool = ctx.Pool(n_processes)
 
     # Create processing function for finding touching labels
-    process_func = partial(_find_touching_labels, label_image_path=label_image_path)
+    if backend == "cpu":
+        process_func = partial(_find_touching_labels, label_image_path=label_image_path)
+    elif backend == "cupy":
+        process_func = partial(
+            _find_touching_labels_gpu, label_image_path=label_image_path
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
     try:
         results = pool.map(process_func, boundaries)
