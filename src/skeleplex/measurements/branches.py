@@ -1,5 +1,7 @@
 import logging  # noqa
 import os
+from typing import TYPE_CHECKING
+
 import networkx as nx
 import h5py
 import numpy as np
@@ -9,13 +11,16 @@ import torch
 from tqdm import tqdm
 import concurrent.futures
 
-
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
-
 from skeleplex.measurements.utils import grey2rgb, radius_from_area
 from skeleplex.graph.skeleton_graph import SkeletonGraph
-from skeleplex.measurements.lumen_classifier import ResNet3ClassClassifier
+
+if TYPE_CHECKING:
+    from skeleplex.measurements.lumen_classifier import ResNet3ClassClassifier
+
+    try:
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+    except ImportError:
+        pass
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -25,7 +30,7 @@ def filter_and_segment_lumen(
     data_path,
     save_path,
     sam_checkpoint_path: str | None = None,
-    resnet_predictor: ResNet3ClassClassifier | None = None,
+    resnet_predictor: "ResNet3ClassClassifier | None" = None,
     eccentricity_thresh=0.7,
     circularity_thresh=0.5,
     find_lumen=True,
@@ -156,6 +161,10 @@ def filter_and_segment_lumen(
                 continue
 
             if find_lumen:
+                # delay imports so that the function can be used without SAM2
+                from sam2.build_sam import build_sam2
+                from sam2.sam2_image_predictor import SAM2ImagePredictor
+
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 sam2_checkpoint = sam_checkpoint_path
                 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
@@ -183,8 +192,8 @@ def filter_and_segment_lumen(
 def find_lumen_in_slice(
     image_slice: np.ndarray,
     label_slice: np.ndarray,
-    predictor: SAM2ImagePredictor,
-    resnet_predictor: ResNet3ClassClassifier,
+    predictor: "SAM2ImagePredictor",
+    resnet_predictor: "ResNet3ClassClassifier",
     sam_quality_threshold=0.1,
 ) -> np.ndarray:
     """
