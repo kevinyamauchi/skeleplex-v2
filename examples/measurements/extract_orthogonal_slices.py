@@ -35,6 +35,7 @@ def main():  # noqa: D103
             volume_path=volume_path,
             slice_spacing=0.1,
             slice_size_um=20,
+            sample_grid_spacing_um=1,
             segmentation_path=segmentation_path,
         )
     )
