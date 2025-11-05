@@ -117,12 +117,74 @@ def _label_chunk_with_offset(
     return (chunk_slices, max_label)
 
 
+def _label_chunk_with_offset_gpu(
+    chunk_slices: tuple[slice, ...], input_path: str, output_path: str
+) -> tuple[tuple[slice, ...], int]:
+    """
+    Process a single chunk on GPU: label connected components and apply offset.
+
+    Uses global variables _offset_counter and _counter_lock set by initializer.
+    This should not be used independently; use label_chunks_parallel instead.
+
+    Parameters
+    ----------
+    chunk_slices : tuple of slice
+        Slice tuple defining the chunk location in the array
+    input_path : str
+        Path to input zarr array
+    output_path : str
+        Path to output zarr array
+
+    Returns
+    -------
+    tuple
+        (chunk_slices, max_label) for logging/debugging
+    """
+    import cupy as cp
+    from cupyx.scipy.ndimage import generate_binary_structure
+    from cupyx.scipy.ndimage import label as cupy_label
+
+    global _offset_counter, _counter_lock
+
+    # Load input chunk
+    input_zarr = zarr.open(input_path, mode="r")
+    chunk_data = input_zarr[chunk_slices]
+
+    # Transfer to GPU
+    chunk_data_gpu = cp.asarray(chunk_data)
+
+    # Create 26-connectivity structuring element (3x3x3 with all True)
+    structure = generate_binary_structure(rank=3, connectivity=3)
+
+    # Label connected components with 26-connectivity
+    labeled_chunk_gpu, num_features = cupy_label(chunk_data_gpu, structure=structure)
+    max_label = int(labeled_chunk_gpu.max())
+
+    # Get offset atomically and update counter
+    with _counter_lock:
+        my_offset = _offset_counter.value
+        _offset_counter.value += max_label
+
+    # Apply offset to non-background pixels
+    if max_label > 0:
+        mask = labeled_chunk_gpu > 0
+        labeled_chunk_gpu[mask] += my_offset
+
+    # Transfer back to CPU and write to output zarr
+    labeled_chunk = cp.asnumpy(labeled_chunk_gpu)
+    output_zarr = zarr.open(output_path, mode="r+")
+    output_zarr[chunk_slices] = labeled_chunk
+
+    return (chunk_slices, max_label)
+
+
 def label_chunks_parallel(
     input_path: str,
     output_path: str,
     chunk_shape: tuple[int, ...],
     n_processes: int = 4,
     pool_type: Literal["spawn", "fork", "forkserver", "thread"] = "fork",
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> int:
     """
     Label connected components in a large zarr image using parallel processing.
@@ -144,6 +206,9 @@ def label_chunks_parallel(
         - 'fork': Copy parent process (faster but can have issues with threads)
         - 'forkserver': Hybrid approach (Unix only)
         - 'thread': Use threading instead of multiprocessing (good for I/O bound)
+    backend : {'cpu', 'cupy'}, default='cpu'
+        Backend to use for labeling. 'cpu' uses CPU-based labeling,
+        'cupy' uses GPU-based labeling with CuPy. Default is 'cpu'.
 
     Returns
     -------
@@ -195,9 +260,16 @@ def label_chunks_parallel(
         )
 
     # Create the processing function
-    process_func = partial(
-        _label_chunk_with_offset, input_path=input_path, output_path=output_path
-    )
+    if backend == "cpu":
+        process_func = partial(
+            _label_chunk_with_offset, input_path=input_path, output_path=output_path
+        )
+    elif backend == "cupy":
+        process_func = partial(
+            _label_chunk_with_offset_gpu, input_path=input_path, output_path=output_path
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
     try:
         _ = pool.map(process_func, chunk_slices_list)
