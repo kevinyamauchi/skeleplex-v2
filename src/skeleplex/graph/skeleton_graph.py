@@ -453,7 +453,7 @@ class SkeletonGraph:
             skeleton_object.image_key = object_dict["image_key"]
         if "voxel_size_um" in object_dict:
             voxel_size_um = object_dict["voxel_size_um"]
-            if voxel_size_um and not isinstance(voxel_size_um, tuple):
+            if isinstance(voxel_size_um, float | int):
                 voxel_size_um = (voxel_size_um, voxel_size_um, voxel_size_um)
             skeleton_object.voxel_size_um = voxel_size_um
 
