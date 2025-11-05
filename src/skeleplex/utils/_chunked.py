@@ -116,7 +116,7 @@ def iteratively_process_chunks_3d(
                     # if the processed array has extra dims (e.g., channels/features),
                     # extend the slice with full slices for those dimensions
                     n_extra_dims = processed.ndim - 3
-                      # dimensions beyond the first 3
+                    # dimensions beyond the first 3
                     if n_extra_dims > 0:
 
                         extra_slices = [
