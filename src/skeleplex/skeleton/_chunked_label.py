@@ -350,7 +350,7 @@ def _find_touching_labels_gpu(
 ) -> np.ndarray:
     """Find pairs of labels that are touching within a region using 26-connectivity.
 
-    GPU-accelerated version using CuPy.
+    This is a GPU-accelerated version using CuPy.
 
     Parameters
     ----------
