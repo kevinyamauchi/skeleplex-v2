@@ -83,7 +83,7 @@ def test_output_with_extra_dimensions(tmp_path):
     # create a small 3D dask array
     shape = (4, 4, 4)
     chunk_shape = (2, 2, 2)
-    extra_border = (2, 2, 2)
+    extra_border = (1, 1, 1)
 
     input_data = np.random.rand(*shape).astype("float64")
     input_array = da.from_array(input_data, chunks=chunk_shape)
