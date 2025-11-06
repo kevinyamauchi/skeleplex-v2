@@ -123,7 +123,8 @@ def test_sample_volume_slices_from_spline(straight_edge_graph):
     slices_vox2 = straight_edge_graph.sample_volume_slices_from_spline(
         straight_edge_volume,
         slice_spacing=0.3,
-        slice_size=10,
+        slice_size_um=10,
+        sample_grid_spacing_um=2,
         interpolation_order=1,
         approx=True,
     )
@@ -136,7 +137,8 @@ def test_sample_volume_slices_from_spline(straight_edge_graph):
     slices_vox1 = straight_edge_graph.sample_volume_slices_from_spline(
         straight_edge_volume,
         slice_spacing=0.3,
-        slice_size=10,
+        slice_size_um=10,
+        sample_grid_spacing_um=2,
         interpolation_order=1,
         approx=True,
     )
@@ -158,7 +160,8 @@ def test_sample_volume_slices_from_spline_parallel(straight_edge_graph):
         slices_vox1 = straight_edge_graph.sample_volume_slices_from_spline_parallel(
             tmpdir + "scale_1.zarr",
             slice_spacing=0.3,
-            slice_size=10,
+            slice_size_um=10,
+            sample_grid_spacing_um=1,
             interpolation_order=1,
             approx=True,
             num_workers=1,
@@ -172,7 +175,8 @@ def test_sample_volume_slices_from_spline_parallel(straight_edge_graph):
         slices_vox2 = straight_edge_graph.sample_volume_slices_from_spline_parallel(
             tmpdir + "scale_2.zarr",
             slice_spacing=0.3,
-            slice_size=10,
+            slice_size_um=10,
+            sample_grid_spacing_um=1,
             interpolation_order=1,
             approx=True,
             num_workers=1,
