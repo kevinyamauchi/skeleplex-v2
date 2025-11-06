@@ -19,7 +19,7 @@ def iteratively_process_chunks_3d(
 ):
     """Apply a function to each chunk of a Dask array with extra border handling.
 
-    Parameters
+    no
     ----------
     input_array : dask.array.Array
         The input Dask array to process. Must be 3D.
@@ -91,8 +91,8 @@ def iteratively_process_chunks_3d(
                         slice(expanded_start[dim], expanded_end[dim])
                         for dim in range(3)
                     )
-                   
-                   # calculate actual border used (may be smaller at edges)
+
+                    # calculate actual border used (may be smaller at edges)
                     actual_border_before = tuple(
                         core_start[dim] - expanded_start[dim] for dim in range(3)
                     )
@@ -107,19 +107,34 @@ def iteratively_process_chunks_3d(
                     core_in_result_slice = [
                         slice(
                             actual_border_before[dim],
-                            actual_border_before[dim] + (core_end[dim] - core_start[dim]),
+                            actual_border_before[dim] +
+                            (core_end[dim] - core_start[dim]),
                         )
                         for dim in range(3)
                     ]
 
                     # if the processed array has extra dims (e.g., channels/features),
                     # extend the slice with full slices for those dimensions
-                    if processed.ndim > 3:
-                        extra_slices = [slice(None)] * (processed.ndim - 3)
-                        core_in_result_slice = core_in_result_slice + extra_slices
+                    n_extra_dims = processed.ndim - 3
+                    # dimensions beyond the first 3
+                    if n_extra_dims > 0:
+
+                        extra_slices = [
+                            slice(0, processed.shape[dim_idx])
+                            for dim_idx in range(n_extra_dims)
+                        ]
+
+                        #this is used to slice the processed array
+                        core_in_result_slice =  extra_slices + core_in_result_slice
+                        #this is used slice the output array into which we write
+                        core_slice_extended = extra_slices + list(core_slice)
+                    else:
+                        #if no extra dims, just use the 3D slices
+                        core_slice_extended = list(core_slice)
 
                     # convert back to tuple
                     core_in_result_slice = tuple(core_in_result_slice)
+                    core_slice_extended = tuple(core_slice_extended)
 
                     #check if end dimensions match input
                     if processed.ndim != len(core_in_result_slice):
@@ -131,8 +146,8 @@ def iteratively_process_chunks_3d(
                     core_result = processed[core_in_result_slice]
 
                     # write to Zarr
-
-                    output_zarr[core_slice] = core_result
+                    output_zarr[core_slice_extended] = core_result
+                    
 
 
 def get_boundary_slices(
