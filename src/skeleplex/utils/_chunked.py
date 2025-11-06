@@ -147,3 +147,53 @@ def iteratively_process_chunks_3d(
 
                     # write to Zarr
                     output_zarr[core_slice_extended] = core_result
+                    
+
+
+def get_boundary_slices(
+    array_shape: tuple[int, int, int], chunk_shape: tuple[int, int, int]
+) -> list[tuple[slice, slice, slice]]:
+    """
+    Get slice objects for 2-voxel thick interfaces at chunk boundaries.
+
+    For each boundary between chunks, returns a tuple of slice objects that
+    selects a 2-voxel thick region: 1 voxel from the end of one chunk and
+    1 voxel from the beginning of the adjacent chunk.
+
+    Parameters
+    ----------
+    array_shape : tuple[int, int, int]
+        Shape of the array (z, y, x)
+    chunk_shape : tuple[int, int, int]
+        Shape of each chunk (z, y, x). All chunks are assumed to be the same size.
+
+    Returns
+    -------
+    list[tuple[slice, slice, slice]]
+        List of (slice, slice, slice) tuples for indexing boundary regions
+    """
+    boundary_slices = []
+
+    # Iterate through each dimension (z=0, y=1, x=2)
+    for dim in range(3):
+        # Calculate number of chunks in this dimension
+        num_chunks = (array_shape[dim] + chunk_shape[dim] - 1) // chunk_shape[dim]
+
+        # Iterate through internal boundaries (between chunk n and chunk n+1)
+        for chunk_idx in range(1, num_chunks):
+            # Boundary position is at the start of chunk (chunk_idx)
+            boundary_pos = chunk_idx * chunk_shape[dim]
+
+            # Check if the 2-voxel interface fits within array bounds
+            if boundary_pos > 0 and boundary_pos < array_shape[dim]:
+                # Create slice tuple for this boundary
+                slices = [slice(None)] * 3  # Start with full slices for all dims
+
+                # Set the slice for the boundary dimension
+                # Take 1 voxel before and 1 voxel at the boundary
+                slices[dim] = slice(boundary_pos - 1, boundary_pos + 1)
+
+                boundary_slices.append(tuple(slices))
+
+    return boundary_slices
+                    
