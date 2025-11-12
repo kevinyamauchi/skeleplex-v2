@@ -5,6 +5,7 @@ import numpy as np
 
 from skeleplex.graph.constants import (
     BRANCH_ANGLE_EDGE_KEY,
+    BRANCH_ANGLE_JUNCTION_EDGE_KEY,
     EDGE_SPLINE_KEY,
     LOBE_NAME_KEY,
     NODE_COORDINATE_KEY,
@@ -41,6 +42,10 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
     graph : nx.DiGraph
         The input graph with the angles added as edge attributes
 
+    midline_vector : np.ndarray
+        Array of shape (n_edges, 2, 3) containing the start and end points
+        of the midline vectors for visualization.
+
     Raises
     ------
     ValueError
@@ -52,19 +57,19 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
         Raises and error if the length of the branch vector is != 1
 
     """
-    tree = graph.copy()
+    graph = graph.copy()
 
     angle_dict = {}
     center_points = []
     midline_points = []
 
-    node_coordinates = nx.get_node_attributes(tree, "node_coordinate")
+    node_coordinates = nx.get_node_attributes(graph, NODE_COORDINATE_KEY)
 
-    for u, v, _ in tree.edges(data=True):
+    for u, v, _ in graph.edges(data=True):
         edge = (u, v)
-        if not list(tree.in_edges(u)):
+        if not list(graph.in_edges(u)):
             continue
-        parent_edge = next(iter(tree.in_edges(u)))
+        parent_edge = next(iter(graph.in_edges(u)))
 
         parent_start_node_coordinates = node_coordinates[parent_edge[0]]
         parent_end_node_coordinates = node_coordinates[parent_edge[1]]
@@ -91,28 +96,24 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
 
         dot = np.dot(midline_vector, branch_vector)
         angle = np.degrees(np.arccos(dot))
-        # center around 90 degrees
-        # angle = np.abs(angle -90)
-        if angle > 90:
-            angle = angle - 90
-
         angle_dict[edge] = angle
 
         # store for visualization
         center_points.append(parent_end_node_coordinates)
         midline_points.append(parent_end_node_coordinates + (50 * midline_vector))
 
-    nx.set_edge_attributes(tree, angle_dict, BRANCH_ANGLE_EDGE_KEY)
+    nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_JUNCTION_EDGE_KEY)
+    midline_vector = np.array(np.stack([center_points, midline_points], axis=1))
 
-    return tree, center_points, midline_points
+    return graph, midline_vector
 
 
 def compute_midline_branch_angle_spline(
-    graph: nx.DiGraph, n_samples: int, approx=False
+    graph: nx.DiGraph, sample_positions: np.ndarray, approx=False
 ):
     """Calculates the midline branch angle for each branch in the graph.
 
-    Computes the midline anlges for each branch in the graph and returns
+    Computes the midline angles for each branch in the graph and returns
     the midline branch angle as an edge attribute.
 
     To compute the vectors, the spline is used to sample points along the
@@ -129,8 +130,8 @@ def compute_midline_branch_angle_spline(
     ----------
     graph : nx.DiGraph
         The input graph
-    n_samples : int
-        The number of samples to take along the spline
+    sample_positions : np.array
+        List of positions along the spline to sample the tangents
     approx : bool
         If True, evaluate the spline using an approximation
 
@@ -138,6 +139,9 @@ def compute_midline_branch_angle_spline(
     -------
     graph : nx.DiGraph
         The input graph with the angles added as edge attributes
+    sample_position_list: list
+        Returns the position on which the tangents of the spline were taken.
+        For debugging purposes.
 
     Raises
     ------
@@ -152,6 +156,7 @@ def compute_midline_branch_angle_spline(
     """
     graph = graph.copy()
     angle_dict = {}
+    sample_positions_list = []
     # loop over each edge
     for u, v in graph.edges():
         edge = (u, v)
@@ -161,11 +166,15 @@ def compute_midline_branch_angle_spline(
         parent_edge = parent_edge[0]
         parent_spline = graph.edges[parent_edge][EDGE_SPLINE_KEY]
         spline = graph.edges[edge][EDGE_SPLINE_KEY]
-        sample_positions = np.linspace(0, 1, n_samples)
+        # sample_positions = np.linspace(0, 1, n_samples)
         parent_tangents = parent_spline.eval(
-            sample_positions, derivative=1, approx=approx
+            1 - sample_positions, derivative=1, approx=approx
+        )
+        sample_positions_list.append(
+            parent_spline.eval(1 - sample_positions, approx=approx)
         )
         tangents = spline.eval(sample_positions, derivative=1, approx=approx)
+        sample_positions_list.append(spline.eval(sample_positions, approx=approx))
         # normalize the tangents
         tangents = [unit_vector(t) for t in tangents]
         parent_tangents = [unit_vector(t) for t in parent_tangents]
@@ -178,15 +187,14 @@ def compute_midline_branch_angle_spline(
             pt = parent_tangents[j]
             dot = np.dot(t, pt)
             angle = np.degrees(np.arccos(dot))
-            # center around 90 deg
-            # angle =np.abs(angle - 90)
+
             angle_list.append(angle)
         # angle_std = np.std(angle_list)
         mean_angle = np.mean(angle_list)
         angle_dict[edge] = mean_angle
 
     nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_EDGE_KEY)
-    return graph
+    return graph, sample_positions_list
 
 
 def compute_rotation_angle(graph: nx.DiGraph):

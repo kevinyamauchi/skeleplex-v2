@@ -1,4 +1,6 @@
-from skeleplex.graph.skeleton_graph import SkeletonGraph  # noqa: D100
+import numpy as np  # noqa: D100
+
+from skeleplex.graph.skeleton_graph import SkeletonGraph
 from skeleplex.measurements.angles import compute_midline_branch_angle_spline
 from skeleplex.measurements.graph_properties import (
     compute_branch_length,
@@ -24,8 +26,8 @@ skeleton_graph.graph = get_daughter_edges(skeleton_graph.graph)
 skeleton_graph.graph = compute_level(skeleton_graph.graph, origin=0)
 skeleton_graph.graph = compute_branch_length(skeleton_graph.graph)
 skeleton_graph.graph = compute_number_of_tips_connected_to_edges(skeleton_graph.graph)
-skeleton_graph.graph = compute_midline_branch_angle_spline(
-    skeleton_graph.graph, n_samples=10
+skeleton_graph.graph, _ = compute_midline_branch_angle_spline(
+    skeleton_graph.graph, sample_positions=np.linspace(0, 0.3, 10)
 )
 
 
