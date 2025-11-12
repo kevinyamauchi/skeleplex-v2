@@ -200,7 +200,7 @@ def test_surface_angles_with_surface_fitting(
 def test_branch_angle(generate_toy_skeleton_graph_symmetric_branch_angle):
     skeleton_toy = generate_toy_skeleton_graph_symmetric_branch_angle
 
-    graph, _, _ = compute_midline_branch_angle_branch_nodes(skeleton_toy.graph)
+    graph, _ = compute_midline_branch_angle_branch_nodes(skeleton_toy.graph)
 
     np.testing.assert_allclose(
         np.array(
