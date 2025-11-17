@@ -102,7 +102,7 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
         center_points.append(parent_end_node_coordinates)
         midline_points.append(parent_end_node_coordinates + (50 * midline_vector))
 
-    nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_JUNCTION_EDGE_KEY)
+    nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_EDGE_KEY)
     midline_vector = np.array(np.stack([center_points, midline_points], axis=1))
 
     return graph, midline_vector
@@ -193,7 +193,7 @@ def compute_midline_branch_angle_spline(
         mean_angle = np.mean(angle_list)
         angle_dict[edge] = mean_angle
 
-    nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_EDGE_KEY)
+    nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_JUNCTION_EDGE_KEY)
     return graph, sample_positions_list
 
 
