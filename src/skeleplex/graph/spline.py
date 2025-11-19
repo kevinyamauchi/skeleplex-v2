@@ -111,6 +111,48 @@ class B3Spline:
 
         return self.model.eval(positions_t, derivative=derivative)
 
+    def curvature(
+        self,
+        positions: np.ndarray,
+        approx: bool = False,
+        atol: float = 1e-6,
+    ) -> np.ndarray:
+        """Evaluate the curvature of the spline at a set of positions.
+
+        Parameters
+        ----------
+        positions : np.ndarray
+            (n,) array of positions to evaluate the spline at.
+            The positions are normalized to the range [0, 1].
+        approx : bool
+            If True, use a quick conversion from normalized arc length
+            coordinates to spline parameter coordinates.
+            The more evenly spaced the spline knots are, the more accurate this
+            approximation becomes.
+            If False, use a binary search to find the parameterized arc length
+            that corresponds to the normalized arc length coordinates.
+            Default value is False.
+        atol : float
+            The absolute tolerance for converting the normalized
+            evaluation positions to positions along the spline.
+            Default value is 1e-6.
+        """
+        if approx:
+            positions_t = positions * (self.model.M - 1)
+            # error computation is expensive, comment out for now
+            # error = self.model.arc_length(positions_t) - (positions * self.arc_length)
+            positions_t = np.asarray(positions_t)
+        else:
+            positions_t = self.model.arc_length_to_parameter(
+                positions * self.arc_length, atol=atol
+            )
+        # For single values, splinebox's eval expects a float
+        # This recasts the value to a float if positions_t is a single value
+        if positions_t.ndim == 0:
+            positions_t = positions_t.tolist()
+
+        return self.model.curvature(positions_t)
+
     def moving_frame(
         self, positions: np.ndarray, method: str = "bishop", atol: float = 1e-6
     ):

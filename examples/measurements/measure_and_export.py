@@ -1,14 +1,8 @@
 import numpy as np  # noqa: D100
 
 from skeleplex.graph.skeleton_graph import SkeletonGraph
-from skeleplex.measurements.angles import compute_midline_branch_angle_spline
-from skeleplex.measurements.graph_properties import (
-    compute_branch_length,
-    compute_level,
-    compute_number_of_tips_connected_to_edges,
-    get_daughter_edges,
-    get_sister_edges,
-)
+from skeleplex.measurements.angles import run_all_angle_metrics
+from skeleplex.measurements.graph_properties import get_all_graph_properties
 from skeleplex.measurements.utils import graph_attributes_to_df
 
 # load graph
@@ -21,15 +15,18 @@ skeleton_graph.to_directed(origin=skeleton_graph.origin)
 skeleton_graph.voxel_size_um = (1, 1, 1)
 
 # add measurements to graph, there are more measurements available
-skeleton_graph.graph = get_sister_edges(skeleton_graph.graph)
-skeleton_graph.graph = get_daughter_edges(skeleton_graph.graph)
-skeleton_graph.graph = compute_level(skeleton_graph.graph, origin=0)
-skeleton_graph.graph = compute_branch_length(skeleton_graph.graph)
-skeleton_graph.graph = compute_number_of_tips_connected_to_edges(skeleton_graph.graph)
-skeleton_graph.graph, _ = compute_midline_branch_angle_spline(
-    skeleton_graph.graph, sample_positions=np.linspace(0, 0.3, 10)
-)
+skeleton_graph.graph, _ = get_all_graph_properties(
+    skeleton_graph.graph,
+    prefix = "example",
+    origin = skeleton_graph.origin,
+    approx =True
+    )
 
+skeleton_graph.graph, output = run_all_angle_metrics(
+    skeleton_graph.graph,
+    sample_positions=np.linspace(0,0.2,10),
+    approx=True
+    )
 
 # save graph with measurements
 skeleton_graph.to_json_file("../example_data/skeleton_graph_measured.json")
