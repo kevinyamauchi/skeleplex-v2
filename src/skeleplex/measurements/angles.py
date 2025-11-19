@@ -2,6 +2,7 @@ import logging  # noqa D100
 
 import networkx as nx
 import numpy as np
+import functools
 
 from skeleplex.graph.constants import (
     BRANCH_ANGLE_EDGE_KEY,
@@ -13,6 +14,7 @@ from skeleplex.graph.constants import (
     SIBLING_ANGLE_EDGE_KEY,
     SISTER_EDGE_KEY,
     SURFACE_ANGLE_EDGE_KEY,
+    ROTATION_ANGLE_VECTOR_EDGE_KEY,
 )
 from skeleplex.measurements.fit_surface import (
     fit_surface_and_get_surface_normal_of_branches,
@@ -23,6 +25,45 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+
+# internal store
+_ANGLE_FUNCTIONS = []
+
+
+def angle_metric(func):
+    """Decorator to register a function as an angle metric."""
+    _ANGLE_FUNCTIONS.append(func)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def run_all_angle_metrics(graph, **kwargs):
+    """Runs all registered angle metrics in order.
+
+    Each metric must accept a graph, and may accept additional keyword arguments.
+    Returns a list of (name, graph_out, extra_return_values).
+    """
+    results = []
+    g = graph
+    for func in _ANGLE_FUNCTIONS:
+        name = func.__name__
+        logger.info(f"Running angle metric: {name}")
+        out = func(g, **{k: v for k, v in kwargs.items() if k in func.__code__.co_varnames})
+        # out can be (graph) or (graph, extra)
+        if isinstance(out, tuple):
+            g = out[0]
+            extra = out[1:]
+        else:
+            g = out
+            extra = ()
+        results.append((name, g, *extra))
+    return g, results
+
+@angle_metric
 def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
     """Calculates the midline branch angle for each branch in the graph.
 
@@ -108,6 +149,7 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
     return graph, midline_vector
 
 
+@angle_metric
 def compute_midline_branch_angle_spline(
     graph: nx.DiGraph, sample_positions: np.ndarray, approx=False
 ):
@@ -196,7 +238,7 @@ def compute_midline_branch_angle_spline(
     nx.set_edge_attributes(graph, angle_dict, BRANCH_ANGLE_JUNCTION_EDGE_KEY)
     return graph, sample_positions_list
 
-
+@angle_metric
 def compute_rotation_angle(graph: nx.DiGraph):
     """Calculates the rotation angle for each edge in the graph.
 
@@ -267,8 +309,65 @@ def compute_rotation_angle(graph: nx.DiGraph):
     nx.set_edge_attributes(graph, rotation_angle_dict, ROTATION_ANGLE_EDGE_KEY)
 
     return graph
+@angle_metric
+def compute_rotation_angle_parent_vector_daughter_plane(graph: nx.DiGraph):
+    """Calculates the rotation angle between the parent vector and the daughter plane.
+
+    Compute the rotation angle between the parent vector
+    and the plane defined by the edge and its sister.
+    The edge attribute is defined in the
+    ROTATION_ANGLE_EDGE_KEY constant.
+    The input graph should have the following attributes:
+    - NODE_COORDINATE_KEY: The node coordinates
+    - SISTER_EDGE_KEY: The sister edge
+    - Directed graph with the correct orientation
+    - Strictly dichotomous tree
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph
+    """
+    rotation_angle_dict = {}
+    graph = graph.copy()
+    node_coord = nx.get_node_attributes(graph, NODE_COORDINATE_KEY)
+    for edge in graph.edges():
+        parent = list(graph.in_edges(edge[0]))
+
+        sister = None
+        if SISTER_EDGE_KEY in graph.edges[edge]:
+            sister = graph.edges[edge][SISTER_EDGE_KEY]
+
+        if not parent or not sister:
+            continue
+        parent = parent[0]
 
 
+
+        if isinstance(sister[0], list):
+            sister = tuple(sister[0])
+
+        parent_vector = node_coord[parent[1]] - node_coord[parent[0]]
+        parent_vector_unit = unit_vector(parent_vector)
+
+        edge_plane = [node_coord[edge[0]], node_coord[edge[1]], node_coord[sister[1]]]
+        if  edge_plane:
+
+            normal_edge = get_normal_of_plane(
+                edge_plane[0], edge_plane[1], edge_plane[2]
+            )
+            rotation_angle = np.arccos(np.dot(parent_vector_unit,
+                                              unit_vector(normal_edge)))
+            # if rotation_angle > np.pi / 2:
+            #     rotation_angle = np.pi - rotation_angle
+            rotation_angle_dict[edge] = rad2deg(rotation_angle)
+
+    nx.set_edge_attributes(graph, rotation_angle_dict, ROTATION_ANGLE_VECTOR_EDGE_KEY)
+
+    return graph
+
+
+@angle_metric
 def compute_sibling_angle(graph: nx.DiGraph):
     """Calculates the sibling angle for each edge in the graph.
 
@@ -299,7 +398,10 @@ def compute_sibling_angle(graph: nx.DiGraph):
     # keep only one sister pair as they both have the same angle
     unique_pairs = set()
     for pair in sister_pairs:
-        if isinstance(pair[0][0], list) or isinstance(pair[1][0], list):
+        if any(
+            isinstance(x, list)
+            for x in (pair[0][0], pair[1][0], pair[1], pair[0])
+        ):
             continue
         pair = tuple(sorted(pair))
         unique_pairs.add(pair)

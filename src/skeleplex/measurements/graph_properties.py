@@ -1,4 +1,7 @@
 import networkx as nx  # noqa: D100
+import numpy as np
+import functools
+import logging
 
 from skeleplex.graph.constants import (
     DAUGHTER_EDGES_KEY,
@@ -8,9 +11,52 @@ from skeleplex.graph.constants import (
     NUMBER_OF_TIPS_KEY,
     PARENT_EDGE_KEY,
     SISTER_EDGE_KEY,
+    EDGE_ID_KEY,
+    PARENT_EDGE_ID_KEY,
+    BRANCH_CURVATURE_EDGE_KEY
 )
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# internal store
+_GRAPH_PROPERTY_FUNCTIONS = []
 
+
+def graph_property(func):
+    """Decorator to register a function as an angle metric."""
+    _GRAPH_PROPERTY_FUNCTIONS.append(func)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def get_all_graph_properties(graph, **kwargs):
+    """Runs all registered graph properties in order.
+
+    Each property must accept a graph, and may accept additional keyword arguments.
+    Returns a list of (name, graph_out, extra_return_values).
+    """
+    results = []
+    g = graph
+    for func in _GRAPH_PROPERTY_FUNCTIONS:
+        name = func.__name__
+        logger.info(f"Running graph property: {name}")
+        out = func(g, **{k: v for k, v in kwargs.items() if k in func.__code__.co_varnames})
+        # out can be (graph) or (graph, extra)
+        if isinstance(out, tuple):
+            g = out[0]
+            extra = out[1:]
+        else:
+            g = out
+            extra = ()
+        results.append((name, g, *extra))
+
+    return g, results
+
+@graph_property
 def get_sister_edges(graph: nx.DiGraph):
     """Return a graph with sister edges annotated.
 
@@ -35,11 +81,14 @@ def get_sister_edges(graph: nx.DiGraph):
         if len(sister) == 1:
             sister_dict[edge] = sister[0]
         elif len(sister) > 1:
-            sister_dict[edge] = sister
+            print("Multiple sisters found for edge:", edge)
+            sister_dict[edge] = sister[0]
+
+            # sister_dict[edge] = sister
     nx.set_edge_attributes(graph, sister_dict, SISTER_EDGE_KEY)
     return graph
 
-
+@graph_property
 def get_daughter_edges(graph):
     """Return a graph with daughter edges annotated.
 
@@ -64,7 +113,7 @@ def get_daughter_edges(graph):
     nx.set_edge_attributes(graph, daughter_dict, DAUGHTER_EDGES_KEY)
     return graph
 
-
+@graph_property
 def get_parent_edges(graph: nx.DiGraph):
     """Return a graph with parent edges annotated.
 
@@ -89,7 +138,40 @@ def get_parent_edges(graph: nx.DiGraph):
     nx.set_edge_attributes(graph, parent_dict, PARENT_EDGE_KEY)
     return graph
 
+@graph_property
+def assign_edge_ids(graph, prefix):
+    """Assign unique IDs to each edge in the graph.
+    
+    Allows to trace edges across different graphs by using a common prefix and
+    store different graphs in the same database.
 
+    Adds two edge attributes:
+    - EDGE_ID_KEY: Unique ID for each edge.
+    - PARENT_EDGE_ID_KEY: Unique ID of the parent edge.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph.
+    prefix : str
+        The prefix to use for the edge IDs.
+    """
+
+    id_dict = {}
+    parent_id_dict = {}
+    parent_edge_dict = nx.get_edge_attributes(graph, 'parent_edge')
+    for u,v in graph.edges():
+        id = prefix + '_' + str(u) + '_' + str(v)
+        id_dict[(u,v)] = id
+        parent_edge = parent_edge_dict[(u,v)]
+        if parent_edge:
+            parent_edge=  parent_edge[0]
+            parent_id_dict[(u,v)]= prefix + '_' + str(parent_edge[0]) + '_' + str(parent_edge[1])
+    nx.set_edge_attributes(graph, id_dict, EDGE_ID_KEY)
+    nx.set_edge_attributes(graph, parent_id_dict, PARENT_EDGE_ID_KEY)
+    return graph
+
+@graph_property
 def compute_level(graph: nx.DiGraph, origin: int):
     """Compute the level of each node and edge in the graph.
 
@@ -129,7 +211,7 @@ def compute_level(graph: nx.DiGraph, origin: int):
     nx.set_edge_attributes(graph, level_dir, GENERATION_KEY)
     return graph
 
-
+@graph_property
 def compute_branch_length(graph):
     """Compute the length of each branch in the graph.
 
@@ -153,7 +235,6 @@ def compute_branch_length(graph):
         length_dir[(u, v)] = length
     nx.set_edge_attributes(graph, length_dir, LENGTH_KEY)
     return graph
-
 
 def count_number_of_tips_connected_to_edge(graph, start_node, end_node):
     """Count the number of tips connected to an edge in the graph.
@@ -189,7 +270,7 @@ def count_number_of_tips_connected_to_edge(graph, start_node, end_node):
 
     return num_endpoints
 
-
+@graph_property
 def compute_number_of_tips_connected_to_edges(graph):
     """Compute the number of tips connected to each edge in the graph.
 
@@ -212,4 +293,40 @@ def compute_number_of_tips_connected_to_edges(graph):
         num_tips = count_number_of_tips_connected_to_edge(graph, u, v)
         num_tips_dir[(u, v)] = num_tips
     nx.set_edge_attributes(graph, num_tips_dir, NUMBER_OF_TIPS_KEY)
+    return graph
+
+@graph_property
+def compute_branch_curvature(graph,
+                             sample_positions=np.linspace(0, 1, 10),
+                             approx=True):
+    """Compute the curvature of each branch in the graph.
+
+    We use the mean curvature normalized by the arch length
+    as a measure for branch curvature.
+
+    The curvature of a branch is computed from its spline representation.
+
+    Parameters
+    ----------
+    graph : nx.DiGraph
+        The input graph.
+    sample_positions : np.ndarray, optional
+        The positions along the spline to sample for curvature computation.
+        The default is np.linspace(0, 1, 10).
+    approx : bool, optional
+        Whether to use approximate curvature computation. The default is True.
+
+    Returns
+    -------
+    nx.DiGraph
+        The graph with branch curvatures annotated.
+    """
+    graph = graph.copy()
+    curvature_dir = {}
+    for u, v in graph.edges():
+        spline = graph[u][v][EDGE_SPLINE_KEY]
+        curvature = spline.curvature(sample_positions, approx=approx)
+        mean_norm_curvature = np.mean(curvature) / spline.arc_length
+        curvature_dir[(u, v)] = mean_norm_curvature
+    nx.set_edge_attributes(graph, curvature_dir, BRANCH_CURVATURE_EDGE_KEY)
     return graph
