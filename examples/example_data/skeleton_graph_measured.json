@@ -369,9 +369,12 @@
             120
           ]
         ],
+        "parent_edge": [],
+        "ID": "example_0_40",
         "level": 0,
         "length": 39.99999999999994,
         "number_of_tips": 4,
+        "branch_curvature": 1.5259886338651125e-16,
         "source": 0,
         "target": 40
       },
@@ -590,10 +593,22 @@
             157
           ]
         ],
+        "parent_edge": [
+          [
+            0,
+            40
+          ]
+        ],
+        "ID": "example_40_119",
+        "parent_ID": "example_0_40",
         "level": 1,
         "length": 27.925588081174006,
         "number_of_tips": 2,
-        "branch_angle": 57.30852274947419,
+        "branch_curvature": 0.0049369875331342905,
+        "branch_angle": 59.74356283647073,
+        "branch_angle_junction": 58.67475591154048,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.48712567294146,
         "source": 40,
         "target": 119
       },
@@ -812,10 +827,22 @@
             158
           ]
         ],
+        "parent_edge": [
+          [
+            0,
+            40
+          ]
+        ],
+        "ID": "example_40_120",
+        "parent_ID": "example_0_40",
         "level": 1,
         "length": 27.92558808117394,
         "number_of_tips": 2,
-        "branch_angle": 57.308522749474285,
+        "branch_curvature": 0.004936987533134465,
+        "branch_angle": 59.74356283647073,
+        "branch_angle_junction": 58.67475591154007,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.48712567294146,
         "source": 40,
         "target": 120
       },
@@ -985,10 +1012,23 @@
           157
         ],
         "daughter_edges": [],
+        "parent_edge": [
+          [
+            40,
+            119
+          ]
+        ],
+        "ID": "example_119_55",
+        "parent_ID": "example_40_119",
         "level": 2,
         "length": 18.73713002811175,
         "number_of_tips": 0,
-        "branch_angle": 114.82656697514604,
+        "branch_curvature": 0.015889528732270557,
+        "branch_angle": 59.61419070632055,
+        "branch_angle_junction": 122.64520521418372,
+        "rotation_angle": 0.0,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.35775354279127,
         "source": 119,
         "target": 55
       },
@@ -1173,10 +1213,23 @@
           55
         ],
         "daughter_edges": [],
+        "parent_edge": [
+          [
+            40,
+            119
+          ]
+        ],
+        "ID": "example_119_157",
+        "parent_ID": "example_40_119",
         "level": 2,
         "length": 18.999999999999986,
         "number_of_tips": 0,
-        "branch_angle": 57.30852274947455,
+        "branch_curvature": 8.147376266473816e-16,
+        "branch_angle": 59.74356283647073,
+        "branch_angle_junction": 62.01466593202175,
+        "rotation_angle": 0.0,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.35775354279127,
         "source": 119,
         "target": 157
       },
@@ -1346,10 +1399,23 @@
           158
         ],
         "daughter_edges": [],
+        "parent_edge": [
+          [
+            40,
+            120
+          ]
+        ],
+        "ID": "example_120_60",
+        "parent_ID": "example_40_120",
         "level": 2,
         "length": 18.737130028111697,
         "number_of_tips": 0,
-        "branch_angle": 114.82656697514585,
+        "branch_curvature": 0.015889528732270317,
+        "branch_angle": 59.61419070632055,
+        "branch_angle_junction": 122.64520521418437,
+        "rotation_angle": 0.0,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.35775354279127,
         "source": 120,
         "target": 60
       },
@@ -1534,10 +1600,23 @@
           60
         ],
         "daughter_edges": [],
+        "parent_edge": [
+          [
+            40,
+            120
+          ]
+        ],
+        "ID": "example_120_158",
+        "parent_ID": "example_40_120",
         "level": 2,
         "length": 18.999999999999986,
         "number_of_tips": 0,
-        "branch_angle": 57.308522749474776,
+        "branch_curvature": 3.3175222504254208e-15,
+        "branch_angle": 59.74356283647073,
+        "branch_angle_junction": 62.014665932022716,
+        "rotation_angle": 0.0,
+        "rotation_angle_parent_vector_daughter_plane": 90.0,
+        "sibling_angle": 119.35775354279127,
         "source": 120,
         "target": 158
       }

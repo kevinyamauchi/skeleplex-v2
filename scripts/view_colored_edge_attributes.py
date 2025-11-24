@@ -7,8 +7,10 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
+# from PyQt5.QtGui import QPixmap
+# from PyQt5.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
 from skeleplex.graph.constants import (
     EDGE_SPLINE_KEY,

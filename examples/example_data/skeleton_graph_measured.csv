@@ -1,4 +1,4 @@
-path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
+path,spline,daughter_edges,parent_edge,ID,level,length,number_of_tips,branch_curvature,sister_edge,parent_ID,branch_angle,branch_angle_junction,rotation_angle_parent_vector_daughter_plane,sibling_angle,rotation_angle
 "[[ 2 20 50]
  [ 2 21 50]
  [ 2 22 50]
@@ -39,7 +39,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 57 50]
  [ 2 58 50]
  [ 2 59 50]
- [ 2 60 50]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b37f08b60>,"[(40, 119), (40, 120)]",0,39.99999999999994,4,,
+ [ 2 60 50]]",<skeleplex.graph.spline.B3Spline object at 0x7f83ec5650a0>,"[(40, 119), (40, 120)]",[],example_0_40,0,39.99999999999994,4,1.5259886338651125e-16,,,,,,,
 "[[ 2 60 50]
  [ 2 61 49]
  [ 2 61 48]
@@ -64,7 +64,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 72 29]
  [ 2 73 28]
  [ 2 73 27]
- [ 2 74 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b373597c0>,"[(119, 55), (119, 157)]",1,27.925588081174006,2,"(40, 120)",57.30852274947419
+ [ 2 74 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d8f50>,"[(119, 55), (119, 157)]","[(0, 40)]",example_40_119,1,27.925588081174006,2,0.0049369875331342905,"(40, 120)",example_0_40,59.74356283647073,58.67475591154048,90.0,119.48712567294146,
 "[[ 2 60 50]
  [ 2 61 51]
  [ 2 61 52]
@@ -89,7 +89,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 72 71]
  [ 2 73 72]
  [ 2 73 73]
- [ 2 74 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b37359850>,"[(120, 60), (120, 158)]",1,27.92558808117394,2,"(40, 119)",57.308522749474285
+ [ 2 74 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d8fe0>,"[(120, 60), (120, 158)]","[(0, 40)]",example_40_120,1,27.92558808117394,2,0.004936987533134465,"(40, 119)",example_0_40,59.74356283647073,58.67475591154007,90.0,119.48712567294146,
 "[[ 2 65 10]
  [ 2 66 11]
  [ 2 66 12]
@@ -106,7 +106,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 72 23]
  [ 2 73 24]
  [ 2 73 25]
- [ 2 74 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b373598e0>,[],2,18.73713002811175,0,"(119, 157)",114.82656697514604
+ [ 2 74 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d9070>,[],"[(40, 119)]",example_119_55,2,18.73713002811175,0,0.015889528732270557,"(119, 157)",example_40_119,59.61419070632055,122.64520521418372,90.0,119.35775354279127,0.0
 "[[ 2 74 26]
  [ 2 75 26]
  [ 2 76 26]
@@ -126,7 +126,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 90 26]
  [ 2 91 26]
  [ 2 92 26]
- [ 2 93 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b37359970>,[],2,18.999999999999986,0,"(119, 55)",57.30852274947455
+ [ 2 93 26]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d9100>,[],"[(40, 119)]",example_119_157,2,18.999999999999986,0,8.147376266473816e-16,"(119, 55)",example_40_119,59.74356283647073,62.01466593202175,90.0,119.35775354279127,0.0
 "[[ 2 65 90]
  [ 2 66 89]
  [ 2 66 88]
@@ -143,7 +143,7 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 72 77]
  [ 2 73 76]
  [ 2 73 75]
- [ 2 74 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b37359a00>,[],2,18.737130028111697,0,"(120, 158)",114.82656697514585
+ [ 2 74 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d9190>,[],"[(40, 120)]",example_120_60,2,18.737130028111697,0,0.015889528732270317,"(120, 158)",example_40_120,59.61419070632055,122.64520521418437,90.0,119.35775354279127,0.0
 "[[ 2 74 74]
  [ 2 75 74]
  [ 2 76 74]
@@ -163,4 +163,4 @@ path,spline,daughter_edges,level,length,number_of_tips,sister_edge,branch_angle
  [ 2 90 74]
  [ 2 91 74]
  [ 2 92 74]
- [ 2 93 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f0b37359a90>,[],2,18.999999999999986,0,"(120, 60)",57.308522749474776
+ [ 2 93 74]]",<skeleplex.graph.spline.B3Spline object at 0x7f83eb4d9220>,[],"[(40, 120)]",example_120_158,2,18.999999999999986,0,3.3175222504254208e-15,"(120, 60)",example_40_120,59.74356283647073,62.014665932022716,90.0,119.35775354279127,0.0

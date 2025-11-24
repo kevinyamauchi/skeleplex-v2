@@ -494,6 +494,7 @@ class SkeletonGraph:
         edge_coordinate_key,
         node_coordinate_key,
         voxel_size_um: float | None = None,
+        scale_to_um: bool = True,
     ) -> "SkeletonGraph":
         """Return a SkeletonGraph from a networkx graph.
 
@@ -512,15 +513,24 @@ class SkeletonGraph:
             The key to use for the node coordinates.
         voxel_size_um : float | None
             Spacing of the voxels. Used to transform graph coordinates to um.
+        scale_to_um : bool
+            Whether to scale the coordinates to micrometers using the voxel size.
         """
         graph_mod = graph.copy()
         for _, _, attr in graph_mod.edges(data=True):
-            attr[EDGE_COORDINATES_KEY] = attr.pop(edge_coordinate_key)
+            # attr[EDGE_COORDINATES_KEY] = attr.pop(edge_coordinate_key)
+            edge_coords = attr[edge_coordinate_key]
             # add spline
+            if scale_to_um and voxel_size_um is not None:
+                edge_coords = edge_coords * voxel_size_um
+            attr[EDGE_COORDINATES_KEY] = edge_coords
             spline = B3Spline.from_points(attr[EDGE_COORDINATES_KEY])
             attr[EDGE_SPLINE_KEY] = spline
         for _, node_data in graph_mod.nodes(data=True):
-            node_data[NODE_COORDINATE_KEY] = node_data.pop(node_coordinate_key)
+            node_coords = node_data.pop(node_coordinate_key)
+            if scale_to_um and voxel_size_um is not None:
+                node_coords = node_coords * voxel_size_um
+            node_data[NODE_COORDINATE_KEY] = node_coords
         return cls(graph=graph_mod, voxel_size_um=voxel_size_um)
 
     def __eq__(self, other: "SkeletonGraph"):
