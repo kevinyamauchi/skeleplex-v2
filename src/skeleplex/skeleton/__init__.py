@@ -7,6 +7,7 @@ from skeleplex.skeleton._chunked_label import (
 )
 from skeleplex.skeleton._segment import segment
 from skeleplex.skeleton._skeletonize import skeletonize
+from skeleplex.skeleton._upscale import upscale_skeleton
 from skeleplex.skeleton._utils import get_skeletonization_model
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "label_chunks_parallel",
     "relabel_parallel",
     "merge_touching_labels",
+    "upscale_skeleton",
 ]
