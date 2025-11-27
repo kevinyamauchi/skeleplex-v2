@@ -55,7 +55,6 @@ def iteratively_process_chunks_3d(
     array_shape = input_array.shape
     n_chunks = tuple(int(np.ceil(array_shape[i] / chunk_shape[i])) for i in range(3))
 
-
     total_chunks = n_chunks[0] * n_chunks[1] * n_chunks[2]
     with tqdm(total=total_chunks, desc="Processing chunks") as pbar:
         for i in range(n_chunks[0]):
@@ -103,12 +102,12 @@ def iteratively_process_chunks_3d(
                     # apply function
                     processed = function_to_apply(chunk_with_border, *args, **kwargs)
 
-                    #extend slice to match output_array_shape array dimensions
+                    # extend slice to match output_array_shape array dimensions
                     core_in_result_slice = [
                         slice(
                             actual_border_before[dim],
-                            actual_border_before[dim] +
-                            (core_end[dim] - core_start[dim]),
+                            actual_border_before[dim]
+                            + (core_end[dim] - core_start[dim]),
                         )
                         for dim in range(3)
                     ]
@@ -118,25 +117,24 @@ def iteratively_process_chunks_3d(
                     n_extra_dims = processed.ndim - 3
                     # dimensions beyond the first 3
                     if n_extra_dims > 0:
-
                         extra_slices = [
                             slice(0, processed.shape[dim_idx])
                             for dim_idx in range(n_extra_dims)
                         ]
 
-                        #this is used to slice the processed array
-                        core_in_result_slice =  extra_slices + core_in_result_slice
-                        #this is used slice the output array into which we write
+                        # this is used to slice the processed array
+                        core_in_result_slice = extra_slices + core_in_result_slice
+                        # this is used slice the output array into which we write
                         core_slice_extended = extra_slices + list(core_slice)
                     else:
-                        #if no extra dims, just use the 3D slices
+                        # if no extra dims, just use the 3D slices
                         core_slice_extended = list(core_slice)
 
                     # convert back to tuple
                     core_in_result_slice = tuple(core_in_result_slice)
                     core_slice_extended = tuple(core_slice_extended)
 
-                    #check if end dimensions match input
+                    # check if end dimensions match input
                     if processed.ndim != len(core_in_result_slice):
                         raise ValueError(
                             "The output of function_to_apply has "
@@ -147,7 +145,6 @@ def iteratively_process_chunks_3d(
 
                     # write to Zarr
                     output_zarr[core_slice_extended] = core_result
-                    
 
 
 def get_boundary_slices(
@@ -196,4 +193,48 @@ def get_boundary_slices(
                 boundary_slices.append(tuple(slices))
 
     return boundary_slices
-                    
+
+
+def calculate_expanded_slice(
+    chunk_slice: tuple[slice, ...],
+    border_size: tuple[int, int, int],
+    array_shape: tuple[int, int, int],
+) -> tuple[tuple[slice, ...], tuple[int, int, int]]:
+    """Calculate expanded slice and actual border size for a chunk.
+
+    Given a core chunk slice, this function calculates an expanded slice
+    that includes a border around the core chunk, clipped to array boundaries.
+    It also returns the actual border size used (may be smaller at array edges).
+
+    Parameters
+    ----------
+    chunk_slice : tuple of slice
+        Slice objects defining the core chunk region.
+    border_size : tuple[int, int, int]
+        Desired border size to add around chunk in voxels (z, y, x).
+    array_shape : tuple[int, int, int]
+        Shape of the full array (z, y, x).
+
+    Returns
+    -------
+    expanded_slice : tuple of slice
+        Slice objects defining the expanded chunk region (core + border).
+    actual_border_before : tuple[int, int, int]
+        Actual border size before the core chunk (z, y, x).
+        May be smaller than requested at array boundaries.
+    """
+    # Extract core chunk boundaries
+    core_start = tuple(s.start for s in chunk_slice)
+    core_end = tuple(s.stop for s in chunk_slice)
+
+    # Calculate expanded slice (core + border, clipped to array boundaries)
+    expanded_start = tuple(max(0, core_start[i] - border_size[i]) for i in range(3))
+    expanded_end = tuple(
+        min(array_shape[i], core_end[i] + border_size[i]) for i in range(3)
+    )
+    expanded_slice = tuple(slice(expanded_start[i], expanded_end[i]) for i in range(3))
+
+    # Calculate actual border used (may be smaller at array edges)
+    actual_border_before = tuple(core_start[i] - expanded_start[i] for i in range(3))
+
+    return expanded_slice, actual_border_before
