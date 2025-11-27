@@ -6,7 +6,11 @@ import pytest
 import zarr
 from scipy.ndimage import convolve
 
-from skeleplex.utils import get_boundary_slices, iteratively_process_chunks_3d
+from skeleplex.utils import (
+    calculate_expanded_slice,
+    get_boundary_slices,
+    iteratively_process_chunks_3d,
+)
 
 
 def test_input_array_not_3d(tmp_path):
@@ -78,6 +82,7 @@ def test_extra_border_not_3_tuple(tmp_path):
             extra_border=(1, 1),  # Only 2 elements
         )
 
+
 def test_output_with_extra_dimensions(tmp_path):
     """Test that function works when output has extra dimensions."""
     # create a small 3D dask array
@@ -93,10 +98,11 @@ def test_output_with_extra_dimensions(tmp_path):
     output_shape = (2, 4, 4, 4)  # Extra dimension of size 2
     output_path = tmp_path / "output.zarr"
     output_zarr = zarr.open(
-        str(output_path), mode="w",
+        str(output_path),
+        mode="w",
         shape=output_shape,
         chunks=(2, *chunk_shape),
-        dtype="float64"
+        dtype="float64",
     )
 
     def expand_func(x):
@@ -117,6 +123,7 @@ def test_output_with_extra_dimensions(tmp_path):
 
     # verify the result shape
     assert result.shape == output_shape
+
 
 def test_processing_with_convolution(tmp_path):
     """Test roundtrip processing with convolution to verify border handling."""
@@ -182,3 +189,39 @@ def test_boundary_slices():
         expected
     ), f"Expected {len(expected)} boundaries, got {len(result)}"
     assert result == expected, f"Expected {expected}, got {result}"
+
+
+def test_calculate_expanded_slice():
+    """Test expanded slice calculation for three different chunk positions."""
+    array_shape = (100, 100, 100)
+    border_size = (5, 5, 5)
+
+    # Test 1: Chunk at corner (0, 0, 0)
+    chunk_slice_corner = (slice(0, 10), slice(0, 10), slice(0, 10))
+    expanded_slice, actual_border = calculate_expanded_slice(
+        chunk_slice_corner, border_size, array_shape
+    )
+
+    # At corner, border cannot extend before 0
+    assert expanded_slice == (slice(0, 15), slice(0, 15), slice(0, 15))
+    assert actual_border == (0, 0, 0)
+
+    # Test 2: Chunk at max corner
+    chunk_slice_max = (slice(90, 100), slice(90, 100), slice(90, 100))
+    expanded_slice, actual_border = calculate_expanded_slice(
+        chunk_slice_max, border_size, array_shape
+    )
+
+    # At max corner, border cannot extend beyond 100
+    assert expanded_slice == (slice(85, 100), slice(85, 100), slice(85, 100))
+    assert actual_border == (5, 5, 5)
+
+    # Test 3: Chunk entirely in middle
+    chunk_slice_middle = (slice(40, 50), slice(40, 50), slice(40, 50))
+    expanded_slice, actual_border = calculate_expanded_slice(
+        chunk_slice_middle, border_size, array_shape
+    )
+
+    # In middle, full border can be applied on both sides
+    assert expanded_slice == (slice(35, 55), slice(35, 55), slice(35, 55))
+    assert actual_border == (5, 5, 5)
