@@ -1,5 +1,7 @@
 """Functions to fix breaks in skeletonized structures."""
 
+from typing import Literal
+
 import numpy as np
 from numba import njit
 from numba.typed import List
@@ -521,6 +523,7 @@ def repair_breaks(
     repair_radius: float = 10.0,
     endpoint_bounding_box: tuple[tuple[int, int, int], tuple[int, int, int]]
     | None = None,
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> np.ndarray:
     """Repair breaks in a skeleton.
 
@@ -545,6 +548,8 @@ def repair_breaks(
         Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max)) defining a bounding box
         within which to consider endpoints for repair.
         If None, all endpoints are considered. Default is None.
+    backend : Literal["cpu", "cupy"]
+        The backend to use for calculation. Default is cpu.
 
     Returns
     -------
@@ -589,14 +594,26 @@ def repair_breaks(
     repaired_skeleton = skeleton_binary.copy()
 
     # Extract skeleton topology data
-    (
-        degree_map,
-        degree_one_coordinates,
-        all_skeleton_coordinates,
-        skeleton_label_map,
-    ) = get_skeleton_data_cpu(
-        skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
-    )
+    if backend == "cpu":
+        (
+            degree_map,
+            degree_one_coordinates,
+            all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cpu(
+            skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
+        )
+    elif backend == "cupy":
+        (
+            degree_map,
+            degree_one_coordinates,
+            all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cupy(
+            skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
     # Early exit if no endpoints
     if degree_one_coordinates.shape[0] == 0:
