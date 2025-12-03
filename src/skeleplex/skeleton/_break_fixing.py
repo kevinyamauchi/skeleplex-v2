@@ -311,6 +311,8 @@ def draw_lines(
 
 def get_skeleton_data_cpu(
     skeleton_image: np.ndarray,
+    endpoint_bounding_box: tuple[tuple[int, int, int], tuple[int, int, int]]
+    | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Extract skeleton topology data needed for break repair.
 
@@ -323,6 +325,10 @@ def get_skeleton_data_cpu(
     skeleton_image : np.ndarray
         The 3D binary array containing the skeleton.
         The skeleton voxels are True or non-zero.
+    endpoint_bounding_box : tuple[tuple[int, int, int], tuple[int, int, int]]
+        Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max)) defining a bounding box
+        within which to consider endpoints. If None, all endpoints are considered.
+        Default is None.
 
     Returns
     -------
@@ -363,6 +369,21 @@ def get_skeleton_data_cpu(
     degree_one_mask = degree_map == 1
     degree_one_coordinates = np.argwhere(degree_one_mask)
 
+    # Filter by bounding box if provided
+    if endpoint_bounding_box is not None:
+        (z_min, y_min, x_min), (z_max, y_max, x_max) = endpoint_bounding_box
+
+        mask = (
+            (degree_one_coordinates[:, 0] >= z_min)
+            & (degree_one_coordinates[:, 0] < z_max)
+            & (degree_one_coordinates[:, 1] >= y_min)
+            & (degree_one_coordinates[:, 1] < y_max)
+            & (degree_one_coordinates[:, 2] >= x_min)
+            & (degree_one_coordinates[:, 2] < x_max)
+        )
+
+        degree_one_coordinates = degree_one_coordinates[mask]
+
     # Get all skeleton coordinates
     all_skeleton_coordinates = np.argwhere(skeleton_binary)
 
@@ -383,6 +404,8 @@ def repair_breaks(
     skeleton_image: np.ndarray,
     segmentation: np.ndarray,
     repair_radius: float = 10.0,
+    endpoint_bounding_box: tuple[tuple[int, int, int], tuple[int, int, int]]
+    | None = None,
 ) -> np.ndarray:
     """Repair breaks in a skeleton.
 
@@ -403,6 +426,10 @@ def repair_breaks(
     repair_radius : float, default=10.0
         The maximum Euclidean distance an endpoint can be connected
         within the segmentation.
+    endpoint_bounding_box : tuple[tuple[int, int, int], tuple[int, int, int]]
+        Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max)) defining a bounding box
+        within which to consider endpoints for repair.
+        If None, all endpoints are considered. Default is None.
 
     Returns
     -------
@@ -432,8 +459,7 @@ def repair_breaks(
         raise ValueError(
             f"Expected 3D skeleton_image, got {skeleton_image.ndim}D array"
         )
-    if segmentation.ndim != 3:
-        raise ValueError(f"Expected 3D segmentation, got {segmentation.ndim}D array")
+
     if skeleton_image.shape != segmentation.shape:
         raise ValueError(
             f"skeleton_image and segmentation must have the same shape. "
@@ -453,7 +479,9 @@ def repair_breaks(
         degree_one_coordinates,
         all_skeleton_coordinates,
         skeleton_label_map,
-    ) = get_skeleton_data_cpu(skeleton_binary)
+    ) = get_skeleton_data_cpu(
+        skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
+    )
 
     # Early exit if no endpoints
     if degree_one_coordinates.shape[0] == 0:

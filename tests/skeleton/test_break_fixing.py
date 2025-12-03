@@ -451,6 +451,158 @@ def test_get_skeleton_data_cpu():
     )
 
 
+def test_get_skeleton_data_cpu_with_bounding_box():
+    """Test get_skeleton_data_cpu with endpoint_bounding_box filtering.
+
+    This creates the same structure as test_get_skeleton_data_cpu:
+    - Line 1: Axis-aligned (along z-axis) from [2,2,2] to [5,2,2]
+    - Line 2: Diagonal from [5,5,5] to [7,7,7]
+
+    But uses a bounding box to exclude Line 2 endpoints.
+    """
+    # Create empty skeleton
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+
+    # Line 1: Axis-aligned vertical line (4 voxels)
+    # z=2,3,4,5 at y=2, x=2
+    skeleton[2, 2, 2] = True  # Bottom endpoint
+    skeleton[3, 2, 2] = True  # Middle
+    skeleton[4, 2, 2] = True  # Middle
+    skeleton[5, 2, 2] = True  # Top endpoint
+
+    # Line 2: Diagonal line (3 voxels)
+    # Moving diagonally in all dimensions
+    skeleton[5, 5, 5] = True  # Start endpoint
+    skeleton[6, 6, 6] = True  # Middle
+    skeleton[7, 7, 7] = True  # End endpoint
+
+    # Define bounding box that includes Line 1 but excludes Line 2
+    # Line 1 is at (z=2-5, y=2, x=2)
+    # Line 2 is at (z=5-7, y=5-7, x=5-7)
+    # Bounding box: z=[0,10), y=[0,4), x=[0,4) will include Line 1 only
+    endpoint_bounding_box = ((0, 0, 0), (10, 4, 4))
+
+    # Get skeleton data with bounding box
+    degree_map, degree_one_coords, all_coords, label_map = get_skeleton_data_cpu(
+        skeleton, endpoint_bounding_box=endpoint_bounding_box
+    )
+
+    # Check the degree map (should be same as without bounding box)
+    expected_degree_map = np.zeros((10, 10, 10), dtype=np.uint8)
+    expected_degree_map[2, 2, 2] = 1  # Line 1 bottom endpoint
+    expected_degree_map[3, 2, 2] = 2  # Line 1 middle
+    expected_degree_map[4, 2, 2] = 2  # Line 1 middle
+    expected_degree_map[5, 2, 2] = 1  # Line 1 top endpoint
+    expected_degree_map[5, 5, 5] = 1  # Line 2 start endpoint
+    expected_degree_map[6, 6, 6] = 2  # Line 2 middle
+    expected_degree_map[7, 7, 7] = 1  # Line 2 end endpoint
+
+    np.testing.assert_array_equal(
+        degree_map,
+        expected_degree_map,
+        err_msg="Degree map does not match expected values",
+    )
+
+    # Check the degree one coordinates
+    # Expected: Only 2 endpoints from Line 1 (Line 2 endpoints excluded by bbox)
+    expected_endpoints = np.array(
+        [
+            [2, 2, 2],  # Line 1 bottom
+            [5, 2, 2],  # Line 1 top
+            # Line 2 endpoints [5,5,5] and [7,7,7] are excluded
+        ]
+    )
+
+    # Sort both arrays to ensure consistent ordering for comparison
+    degree_one_coords_sorted = degree_one_coords[
+        np.lexsort(
+            (degree_one_coords[:, 2], degree_one_coords[:, 1], degree_one_coords[:, 0])
+        )
+    ]
+    expected_endpoints_sorted = expected_endpoints[
+        np.lexsort(
+            (
+                expected_endpoints[:, 2],
+                expected_endpoints[:, 1],
+                expected_endpoints[:, 0],
+            )
+        )
+    ]
+
+    np.testing.assert_array_equal(
+        degree_one_coords_sorted,
+        expected_endpoints_sorted,
+        err_msg="Endpoint coordinates do not match expected values",
+    )
+
+    # Check the skeleton voxel coordinates (should include all voxels, not filtered)
+    expected_all_coords = np.array(
+        [
+            [2, 2, 2],  # Line 1
+            [3, 2, 2],
+            [4, 2, 2],
+            [5, 2, 2],
+            [5, 5, 5],  # Line 2
+            [6, 6, 6],
+            [7, 7, 7],
+        ]
+    )
+
+    # Sort both arrays for consistent ordering
+    all_coords_sorted = all_coords[
+        np.lexsort((all_coords[:, 2], all_coords[:, 1], all_coords[:, 0]))
+    ]
+    expected_all_coords_sorted = expected_all_coords[
+        np.lexsort(
+            (
+                expected_all_coords[:, 2],
+                expected_all_coords[:, 1],
+                expected_all_coords[:, 0],
+            )
+        )
+    ]
+
+    np.testing.assert_array_equal(
+        all_coords_sorted,
+        expected_all_coords_sorted,
+        err_msg="All skeleton coordinates do not match expected values",
+    )
+
+    # Check the label map (should be same as without bounding box)
+    # Expected: Two separate connected components
+    # Line 1 should have one label, Line 2 should have a different label
+
+    # Check that background is 0
+    assert label_map[0, 0, 0] == 0, "Background should be labeled 0"
+
+    # Get labels for each line
+    line1_label = label_map[2, 2, 2]
+    line2_label = label_map[5, 5, 5]
+
+    # Check that labels are positive
+    assert line1_label > 0, "Line 1 should have positive label"
+    assert line2_label > 0, "Line 2 should have positive label"
+
+    # Check that the two lines have different labels
+    assert line1_label != line2_label, "Two separate lines should have different labels"
+
+    # Create expected label map
+    expected_label_map = np.zeros((10, 10, 10), dtype=label_map.dtype)
+    expected_label_map[2, 2, 2] = line1_label  # Line 1
+    expected_label_map[3, 2, 2] = line1_label
+    expected_label_map[4, 2, 2] = line1_label
+    expected_label_map[5, 2, 2] = line1_label
+    expected_label_map[5, 5, 5] = line2_label  # Line 2
+    expected_label_map[6, 6, 6] = line2_label
+    expected_label_map[7, 7, 7] = line2_label
+
+    np.testing.assert_array_equal(
+        label_map,
+        expected_label_map,
+        err_msg="Label map does not match expected values",
+    )
+
+
 def test_repair_breaks_value_error_not_3d():
     """Test that a ValueError is raised when skeleton is not 3D."""
 
