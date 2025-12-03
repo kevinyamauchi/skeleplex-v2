@@ -5,6 +5,7 @@ from skeleplex.skeleton import find_break_repairs
 from skeleplex.skeleton._break_fixing import (
     _flatten_candidates,
     _line_3d_numba,
+    draw_lines,
 )
 
 
@@ -247,3 +248,47 @@ def test_find_break_repairs_no_repairs():
 
     np.testing.assert_array_equal(repair_start, expected_repair_start)
     np.testing.assert_array_equal(repair_end, expected_repair_end)
+
+
+def test_draw_repairs_axis_aligned_and_diagonal():
+    """Test drawing repair lines for axis-aligned and diagonal connections."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+
+    # Set up two repairs:
+    # 1. Axis-aligned repair along z-axis from (2, 5, 5) to (6, 5, 5)
+    # 2. Diagonal repair from (5, 2, 2) to (7, 4, 4)
+    repair_start = np.array(
+        [
+            [2, 5, 5],  # axis-aligned start
+            [5, 2, 2],  # diagonal start
+        ],
+        dtype=np.float64,
+    )
+
+    repair_end = np.array(
+        [
+            [6, 5, 5],  # axis-aligned end
+            [7, 4, 4],  # diagonal end
+        ],
+        dtype=np.float64,
+    )
+
+    # Draw the repairs
+    draw_lines(skeleton, repair_start, repair_end)
+
+    expected = np.zeros((10, 10, 10), dtype=bool)
+
+    # Expected axis-aligned line (z from 2 to 6, y=5, x=5)
+    expected[2, 5, 5] = True
+    expected[3, 5, 5] = True
+    expected[4, 5, 5] = True
+    expected[5, 5, 5] = True
+    expected[6, 5, 5] = True
+
+    # Expected diagonal line from (5, 2, 2) to (7, 4, 4)
+    expected[5, 2, 2] = True
+    expected[6, 3, 3] = True
+    expected[7, 4, 4] = True
+
+    # Verify the result
+    np.testing.assert_array_equal(skeleton, expected)

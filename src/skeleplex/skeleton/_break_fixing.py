@@ -260,3 +260,48 @@ def find_break_repairs(
         label_map,
         segmentation,
     )
+
+
+@njit
+def draw_lines(
+    skeleton: np.ndarray,
+    repair_start: np.ndarray,
+    repair_end: np.ndarray,
+) -> None:
+    """Draw repair lines in the skeleton image in-place.
+
+    This function modifies the skeleton array in-place by drawing lines
+    between repair start and end coordinates. Lines are generated using
+    the existing _line_3d_numba function.
+
+    Parameters
+    ----------
+    skeleton : np.ndarray
+        The 3D binary skeleton array to modify in-place.
+        Shape (nz, ny, nx) where True indicates skeleton voxels.
+    repair_start : np.ndarray
+        (n_repairs, 3) array of repair start coordinates.
+        Contains -1 for rows with no valid repair (which are skipped).
+    repair_end : np.ndarray
+        (n_repairs, 3) array of repair end coordinates.
+        Contains -1 for rows with no valid repair (which are skipped).
+
+    Returns
+    -------
+    None
+        The skeleton array is modified in-place.
+    """
+    n_repairs = repair_start.shape[0]
+
+    for i in range(n_repairs):
+        # Check if this is a valid repair (not a sentinel value)
+        if repair_start[i, 0] == -1:
+            continue
+
+        # Generate line coordinates between start and end
+        line_coords = _line_3d_numba(repair_start[i], repair_end[i])
+
+        # Set all voxels along the line to True
+        for j in range(line_coords.shape[0]):
+            z, y, x = line_coords[j]
+            skeleton[z, y, x] = True
