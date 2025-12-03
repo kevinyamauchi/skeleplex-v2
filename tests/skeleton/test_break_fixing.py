@@ -3,7 +3,7 @@ import pytest
 from numba.typed import List
 
 from skeleplex.skeleton import find_break_repairs, repair_breaks
-from skeleplex.skeleton._break_fixing import (
+from skeleplex.skeleton._break_detection import (
     _flatten_candidates,
     _line_3d_numba,
     draw_lines,

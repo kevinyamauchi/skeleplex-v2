@@ -1,6 +1,6 @@
 """Tools to create a skeleton image of a structure."""
 
-from skeleplex.skeleton._break_fixing import find_break_repairs, repair_breaks
+from skeleplex.skeleton._break_detection import find_break_repairs, repair_breaks
 from skeleplex.skeleton._chunked_label import (
     label_chunks_parallel,
     merge_touching_labels,
