@@ -4,6 +4,7 @@ import numpy as np
 from numba import njit
 from numba.typed import List
 from scipy.ndimage import convolve, label
+from scipy.spatial import KDTree
 
 
 @njit
@@ -376,3 +377,119 @@ def get_skeleton_data_cpu(
         all_skeleton_coordinates,
         skeleton_label_map,
     )
+
+
+def repair_breaks(
+    skeleton_image: np.ndarray,
+    segmentation: np.ndarray,
+    repair_radius: float = 10.0,
+) -> np.ndarray:
+    """Repair breaks in a skeleton.
+
+    This function identifies endpoints in the skeleton (voxels with only one
+    neighbor) and attempts to connect them to other skeleton voxels within
+    a specified radius. A repair is only made if the connecting line stays
+    entirely within the segmentation and connects different connected
+    components.
+
+    Parameters
+    ----------
+    skeleton_image : np.ndarray
+        The 3D binary array containing the skeleton.
+        The skeleton voxels are True or non-zero.
+    segmentation : np.ndarray
+        The 3D binary array containing the segmentation.
+        Foreground voxels are True or non-zero.
+    repair_radius : float, default=10.0
+        The maximum Euclidean distance an endpoint can be connected
+        within the segmentation.
+
+    Returns
+    -------
+    repaired_skeleton : np.ndarray
+        The 3D binary array containing the repaired skeleton.
+        Same shape and dtype as input skeleton_image.
+
+    Raises
+    ------
+    ValueError
+        If skeleton_image or segmentation are not 3D arrays.
+    ValueError
+        If skeleton_image and segmentation have different shapes.
+
+    Notes
+    -----
+    The repair process:
+    1. Identifies all endpoints (degree-1 voxels) in the skeleton
+    2. For each endpoint, finds candidate skeleton voxels within repair_radius
+    3. Tests each candidate by drawing a line and checking if it stays in
+       the segmentation
+    4. Selects the closest valid candidate from a different connected component
+    5. Draws the repair lines in the skeleton
+    """
+    # Validate inputs
+    if skeleton_image.ndim != 3:
+        raise ValueError(
+            f"Expected 3D skeleton_image, got {skeleton_image.ndim}D array"
+        )
+    if segmentation.ndim != 3:
+        raise ValueError(f"Expected 3D segmentation, got {segmentation.ndim}D array")
+    if skeleton_image.shape != segmentation.shape:
+        raise ValueError(
+            f"skeleton_image and segmentation must have the same shape. "
+            f"Got {skeleton_image.shape} and {segmentation.shape}"
+        )
+
+    # Convert to boolean arrays
+    skeleton_binary = skeleton_image.astype(bool)
+    segmentation_binary = segmentation.astype(bool)
+
+    # Create a working copy to modify
+    repaired_skeleton = skeleton_binary.copy()
+
+    # Extract skeleton topology data
+    (
+        degree_map,
+        degree_one_coordinates,
+        all_skeleton_coordinates,
+        skeleton_label_map,
+    ) = get_skeleton_data_cpu(skeleton_binary)
+
+    # Early exit if no endpoints
+    if degree_one_coordinates.shape[0] == 0:
+        return repaired_skeleton
+
+    # Build KDTree for efficient spatial queries
+    kdtree = KDTree(all_skeleton_coordinates)
+
+    # Find repair candidates within radius for each endpoint
+    repair_candidates = []
+    for endpoint in degree_one_coordinates:
+        # Query KDTree for all points within repair_radius
+        indices = kdtree.query_ball_point(endpoint, repair_radius)
+
+        # Get the coordinates of the candidate voxels
+        if len(indices) > 0:
+            candidates = all_skeleton_coordinates[indices]
+        else:
+            # No candidates found, create empty array
+            candidates = np.empty((0, 3), dtype=all_skeleton_coordinates.dtype)
+
+        repair_candidates.append(candidates)
+
+    # Find valid repairs using the existing function
+    repair_start, repair_end = find_break_repairs(
+        end_point_coordinates=degree_one_coordinates,
+        repair_candidates=repair_candidates,
+        label_map=skeleton_label_map,
+        segmentation=segmentation_binary,
+    )
+
+    # Draw the repairs in-place
+    draw_lines(
+        skeleton=repaired_skeleton,
+        repair_start=repair_start,
+        repair_end=repair_end,
+    )
+
+    return repaired_skeleton

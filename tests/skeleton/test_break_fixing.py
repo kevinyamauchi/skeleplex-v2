@@ -1,7 +1,8 @@
 import numpy as np
+import pytest
 from numba.typed import List
 
-from skeleplex.skeleton import find_break_repairs
+from skeleplex.skeleton import find_break_repairs, repair_breaks
 from skeleplex.skeleton._break_fixing import (
     _flatten_candidates,
     _line_3d_numba,
@@ -448,3 +449,93 @@ def test_get_skeleton_data_cpu():
         expected_label_map,
         err_msg="Label map does not match expected values",
     )
+
+
+def test_repair_breaks_value_error_not_3d():
+    """Test that a ValueError is raised when skeleton is not 3D."""
+
+    skeleton = np.zeros((10, 10), dtype=bool)  # 2D skeleton
+    segmentation = np.zeros((10, 10, 10), dtype=bool)
+
+    with pytest.raises(ValueError, match="Expected 3D skeleton_image"):
+        repair_breaks(skeleton, segmentation)
+
+
+def test_repair_breaks_value_error_shape_mismatch():
+    """Test that a ValueError is raised when shapes don't match."""
+
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    segmentation = np.zeros((10, 10, 5), dtype=bool)  # Different shape
+
+    with pytest.raises(ValueError, match="must have the same shape"):
+        repair_breaks(skeleton, segmentation)
+
+
+def test_repair_breaks_simple_line():
+    """Test repair_breaks with a simple axis-aligned line with a break."""
+
+    # Create skeleton with a break
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[7:16, 12, 12] = True  # First segment
+    skeleton[20:24, 12, 12] = True  # Second segment (break from 16 to 20)
+
+    # Segmentation includes the gap
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[5:25, 10:14, 10:14] = True
+
+    # Repair the break
+    repaired = repair_breaks(skeleton, segmentation, repair_radius=10.0)
+
+    # Expected: complete line from 7 to 23
+    expected = np.zeros((30, 30, 30), dtype=bool)
+    expected[7:24, 12, 12] = True
+
+    np.testing.assert_array_equal(repaired, expected)
+
+
+def test_repair_breaks_line_break_too_long():
+    """Test that breaks longer than repair_radius are not fixed."""
+
+    # Create skeleton with a large break
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[7:16, 12, 12] = True  # First segment
+    skeleton[20:24, 12, 12] = True  # Second segment (break of 4 voxels)
+
+    # Segmentation includes the gap
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[5:25, 10:14, 10:14] = True
+
+    # Try to repair with small radius (should not connect)
+    repaired = repair_breaks(skeleton, segmentation, repair_radius=3.0)
+
+    # Expected: no change (break is too long)
+    expected = skeleton.copy()
+
+    np.testing.assert_array_equal(repaired, expected)
+
+
+def test_repair_breaks_tee():
+    """Test repair_breaks with a T-junction skeleton with a break."""
+
+    # Create T-shaped skeleton with a break in the vertical stem
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    # Vertical stem (with break)
+    skeleton[7:17, 12, 12] = True  # Top part of stem
+    skeleton[20:27, 12, 12] = True  # Bottom part of stem (break from 17 to 20)
+    # Horizontal crossbar
+    skeleton[17, 4:8, 12] = True  # Left part of crossbar
+
+    # Segmentation allows the repair
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[5:28, 10:14, 10:14] = True
+    segmentation[16:19, 2:14, 10:14] = True
+
+    # Repair the break
+    repaired = repair_breaks(skeleton, segmentation, repair_radius=5.0)
+
+    # Expected: complete T-shape
+    expected = np.zeros((30, 30, 30), dtype=bool)
+    expected[7:27, 12, 12] = True  # Complete vertical stem
+    expected[17, 4:8, 12] = True  # Horizontal crossbar
+
+    np.testing.assert_array_equal(repaired, expected)
