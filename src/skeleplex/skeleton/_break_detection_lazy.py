@@ -1,6 +1,7 @@
 """Functions for lazy chunk-based skeleton break repair."""
 
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import zarr
@@ -17,6 +18,7 @@ def repair_breaks_chunk(
     expanded_slice: tuple[slice, slice, slice],
     actual_border: tuple[int, int, int],
     repair_radius: float,
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> None:
     """Process a single chunk for skeleton break repair.
 
@@ -40,6 +42,9 @@ def repair_breaks_chunk(
         at volume edges.
     repair_radius : float
         The maximum Euclidean distance for connecting endpoints.
+    backend : Literal["cpu", "cupy"]
+        The computation backend to use.
+        Default is "cpu".
 
     Returns
     -------
@@ -68,6 +73,7 @@ def repair_breaks_chunk(
         segmentation=segmentation_chunk,
         repair_radius=repair_radius,
         endpoint_bounding_box=endpoint_bbox,
+        backend=backend,
     )
 
     # Write full result (core + boundary) to output
@@ -81,6 +87,7 @@ def repair_breaks_lazy(
     output_path: str | Path,
     repair_radius: float = 10.0,
     chunk_shape: tuple[int, int, int] = (256, 256, 256),
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> None:
     """Repair breaks in a skeleton using lazy chunk-based processing.
 
@@ -105,6 +112,9 @@ def repair_breaks_lazy(
         The shape of each core chunk to process (z, y, x).
         Independent of the zarr storage chunk size.
         Default is (256, 256, 256).
+    backend : Literal["cpu", "cupy"]
+        The computation backend to use.
+        Default is "cpu".
 
     Returns
     -------
@@ -210,4 +220,5 @@ def repair_breaks_lazy(
                         expanded_slice=expanded_slice,
                         actual_border=actual_border,
                         repair_radius=repair_radius,
+                        backend=backend,
                     )

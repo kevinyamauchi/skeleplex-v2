@@ -1,5 +1,7 @@
 """Functions to fix breaks in skeletonized structures."""
 
+from typing import Literal
+
 import numpy as np
 from numba import njit
 from numba.typed import List
@@ -400,12 +402,128 @@ def get_skeleton_data_cpu(
     )
 
 
+def get_skeleton_data_cupy(
+    skeleton_image: np.ndarray,
+    endpoint_bounding_box: tuple[tuple[int, int, int], tuple[int, int, int]]
+    | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Extract skeleton topology data needed for break repair using GPU.
+
+    This is a GPU-accelerated version of get_skeleton_data_cpu that uses CuPy
+    for parallel computation. It computes the degree map (number of neighbors
+    for each skeleton voxel), identifies endpoints (degree-1 voxels), collects
+    all skeleton coordinates, and labels connected components of the skeleton.
+
+    Parameters
+    ----------
+    skeleton_image : np.ndarray
+        The 3D binary array containing the skeleton.
+        The skeleton voxels are True or non-zero.
+    endpoint_bounding_box : tuple[tuple[int, int, int], tuple[int, int, int]]
+        Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max)) defining a
+        bounding box within which to consider endpoints. If None, all endpoints
+        are considered. Default is None.
+
+    Returns
+    -------
+    degree_map : np.ndarray
+        3D array of the same shape as skeleton_image where each skeleton
+        voxel contains the count of its neighboring skeleton voxels.
+    degree_one_coordinates : np.ndarray
+        (n, 3) array of coordinates for skeleton voxels with exactly one
+        neighbor (endpoints). If no endpoints exist, returns empty (0, 3)
+        array.
+    all_skeleton_coordinates : np.ndarray
+        (m, 3) array of coordinates for all skeleton voxels. If skeleton is
+        empty, returns empty (0, 3) array.
+    skeleton_label_map : np.ndarray
+        3D array of the same shape as skeleton_image with connected
+        components labeled using full 26-connectivity. Background is 0,
+        connected skeleton components are labeled with positive integers.
+
+    Raises
+    ------
+    ImportError
+        If CuPy is not installed.
+    ValueError
+        If skeleton_image is not 3D.
+    """
+    try:
+        import cupy as cp
+        from cupyx.scipy.ndimage import convolve, label
+    except ImportError as err:
+        raise ImportError(
+            "get_skeleton_data_cupy requires CuPy. "
+            "Please install CuPy for GPU acceleration."
+        ) from err
+
+    # Validate dimensions
+    ndim = skeleton_image.ndim
+    if ndim != 3:
+        raise ValueError(f"Expected 3D skeleton image, got {ndim}D")
+
+    # Transfer to GPU and ensure binary
+    skeleton_gpu = cp.asarray(skeleton_image, dtype=bool)
+
+    # Create 3x3x3 kernel with all ones except center
+    degree_kernel = cp.ones((3, 3, 3), dtype=cp.uint8)
+    degree_kernel[1, 1, 1] = 0
+
+    # Compute degree map: count neighbors for each skeleton voxel
+    degree_map_gpu = convolve(
+        skeleton_gpu.astype(cp.uint8), degree_kernel, mode="constant", cval=0
+    )
+    # Mask to only skeleton voxels (zero out background)
+    degree_map_gpu = degree_map_gpu * skeleton_gpu
+
+    # Find degree-1 voxels (endpoints)
+    degree_one_mask_gpu = degree_map_gpu == 1
+    degree_one_coordinates_gpu = cp.argwhere(degree_one_mask_gpu)
+
+    # Filter by bounding box if provided
+    if endpoint_bounding_box is not None:
+        (z_min, y_min, x_min), (z_max, y_max, x_max) = endpoint_bounding_box
+
+        mask = (
+            (degree_one_coordinates_gpu[:, 0] >= z_min)
+            & (degree_one_coordinates_gpu[:, 0] < z_max)
+            & (degree_one_coordinates_gpu[:, 1] >= y_min)
+            & (degree_one_coordinates_gpu[:, 1] < y_max)
+            & (degree_one_coordinates_gpu[:, 2] >= x_min)
+            & (degree_one_coordinates_gpu[:, 2] < x_max)
+        )
+
+        degree_one_coordinates_gpu = degree_one_coordinates_gpu[mask]
+
+    # Get all skeleton coordinates
+    all_skeleton_coordinates_gpu = cp.argwhere(skeleton_gpu)
+
+    # Label skeleton with full connectivity (26-connectivity in 3D)
+    # Structure for full connectivity: 3x3x3 of all True
+    structure_gpu = cp.ones((3, 3, 3), dtype=bool)
+    skeleton_label_map_gpu, _ = label(skeleton_gpu, structure=structure_gpu)
+
+    # Transfer results back to CPU
+    degree_map = cp.asnumpy(degree_map_gpu)
+    degree_one_coordinates = cp.asnumpy(degree_one_coordinates_gpu)
+    all_skeleton_coordinates = cp.asnumpy(all_skeleton_coordinates_gpu)
+    skeleton_label_map = cp.asnumpy(skeleton_label_map_gpu)
+
+    return (
+        degree_map,
+        degree_one_coordinates,
+        all_skeleton_coordinates,
+        skeleton_label_map,
+    )
+
+
 def repair_breaks(
     skeleton_image: np.ndarray,
     segmentation: np.ndarray,
     repair_radius: float = 10.0,
     endpoint_bounding_box: tuple[tuple[int, int, int], tuple[int, int, int]]
     | None = None,
+    backend: Literal["cpu", "cupy"] = "cpu",
 ) -> np.ndarray:
     """Repair breaks in a skeleton.
 
@@ -430,6 +548,8 @@ def repair_breaks(
         Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max)) defining a bounding box
         within which to consider endpoints for repair.
         If None, all endpoints are considered. Default is None.
+    backend : Literal["cpu", "cupy"]
+        The backend to use for calculation. Default is cpu.
 
     Returns
     -------
@@ -474,14 +594,26 @@ def repair_breaks(
     repaired_skeleton = skeleton_binary.copy()
 
     # Extract skeleton topology data
-    (
-        degree_map,
-        degree_one_coordinates,
-        all_skeleton_coordinates,
-        skeleton_label_map,
-    ) = get_skeleton_data_cpu(
-        skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
-    )
+    if backend == "cpu":
+        (
+            degree_map,
+            degree_one_coordinates,
+            all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cpu(
+            skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
+        )
+    elif backend == "cupy":
+        (
+            degree_map,
+            degree_one_coordinates,
+            all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cupy(
+            skeleton_binary, endpoint_bounding_box=endpoint_bounding_box
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
     # Early exit if no endpoints
     if degree_one_coordinates.shape[0] == 0:
