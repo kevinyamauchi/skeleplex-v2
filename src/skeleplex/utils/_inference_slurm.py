@@ -288,3 +288,71 @@ def infer_on_chunk(
     # Write the core prediction to the output zarr
     output_zarr = zarr.open(output_zarr_path, mode="r+")
     output_zarr[core_chunk_slice] = core_prediction
+
+
+def build_sbatch_command(
+    n_array_jobs: int,
+    job_name: str,
+    time_limit: str,
+    memory: str,
+    cpus_per_task: int,
+    n_gpus: int,
+    gpu_name: str,
+    run_command: str,
+    output_pattern: str | None = None,
+    error_pattern: str | None = None,
+) -> str:
+    """Build the sbatch command for submitting the job array.
+
+    Parameters
+    ----------
+    n_array_jobs : int
+        Total number array jobs (e.g., number of chunks to process).
+    job_name : str
+        Name for the SLURM job.
+    time_limit : str
+        Time limit for each task (HH:MM:SS format).
+    memory : str
+        Memory allocation per CPU (e.g., "32G").
+    cpus_per_task : int
+        Number of CPUs to allocate per task.
+    n_gpus : int
+        Number of GPUs to allocate per task.
+    gpu_name : str
+        Name of GPU type to request (e.g., "rtx_4090").
+    output_pattern : str | None
+        Pattern for output log files.
+    error_pattern : str | None
+        Pattern for error log files.
+    run_command : str
+        The command to be called for each array task.
+        This should include the necessary arguments.
+
+    Returns
+    -------
+    sbatch_cmd : list[str]
+        List of command arguments to pass to subprocess.run().
+    """
+    # Build GPU specification
+    gpu_spec = f"{gpu_name}:{n_gpus}"
+
+    # Build sbatch command
+    sbatch_cmd = (
+        "sbatch"
+        + f" --job-name={job_name}"
+        + f" --array=0-{n_array_jobs - 1}"
+        + f" --time={time_limit}"
+        + f" --cpus-per-task={cpus_per_task}"
+        + f" --mem={memory}"
+        + f" --gpus={gpu_spec}"
+    )
+
+    if output_pattern is not None:
+        sbatch_cmd += f" --output={output_pattern}"
+    if error_pattern is not None:
+        sbatch_cmd += f" --error={error_pattern}"
+
+    # add the run command
+    sbatch_cmd += f" --wrap='{run_command}'"
+
+    return sbatch_cmd

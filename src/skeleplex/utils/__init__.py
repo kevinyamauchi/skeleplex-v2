@@ -7,6 +7,7 @@ from skeleplex.utils._chunked import (
 )
 from skeleplex.utils._geometry import line_segments_in_aabb, points_in_aabb
 from skeleplex.utils._inference_slurm import (
+    build_sbatch_command,
     infer_on_chunk,
     initialize_parallel_inference,
 )
@@ -19,4 +20,5 @@ __all__ = [
     "calculate_expanded_slice",
     "initialize_parallel_inference",
     "infer_on_chunk",
+    "build_sbatch_command",
 ]
