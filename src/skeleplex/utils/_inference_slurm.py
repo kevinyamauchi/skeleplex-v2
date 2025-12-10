@@ -343,7 +343,7 @@ def build_sbatch_command(
         + f" --array=0-{n_array_jobs - 1}"
         + f" --time={time_limit}"
         + f" --cpus-per-task={cpus_per_task}"
-        + f" --mem={memory}"
+        + f" --mem-per-cpu={memory}"
         + f" --gpus={gpu_spec}"
     )
 
