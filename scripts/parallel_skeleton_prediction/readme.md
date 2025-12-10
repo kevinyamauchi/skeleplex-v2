@@ -33,5 +33,10 @@ To adapt this example for your own data and model, you will need to modify the f
 - `batch_size`: number of sub-chunks to process in a single batch during inference. Adjust based on your GPU memory and model size.
 - `overlap`: the fractional overlaps of the sub-chunks for the sliding window inference. Adjust based on your model's receptive field.
 
+**Determining the required resources for your job array**
+To figure out how much time, memory, etc. to request for your job array, you can test on a single chunk as follows:
 
-
+1. Set the parameters in `01_initialize_parallel_inference.py` and  `02_infer_skeleton_chunk.py` with your best guess.
+2. Run `01_initialize_parallel_inference.py`
+3. Instead of running the command as printed by the script, update the job array command to only run job indices 0-0. That is change the part of the command that is `--array=0-n_chunks` to `--array=0-0`. That will submit the job array for only chunk 0.
+4. Repeat as necessary to find the right resource request and parameters.
