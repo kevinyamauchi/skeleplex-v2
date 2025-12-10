@@ -9,7 +9,7 @@ from skeleplex.skeleton.distance_field import local_normalized_distance
 
 if __name__ == "__main__":
     # set to True to visualize the result with napari
-    visualize_with_napari = True
+    visualize_with_napari = False
 
     # path to save the demo image
     output_path = Path("demo_tubes.zarr")
