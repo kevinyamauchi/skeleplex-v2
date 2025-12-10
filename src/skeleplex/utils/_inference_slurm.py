@@ -24,8 +24,9 @@ def initialize_parallel_inference(
 
     This function generates a chunk_table CSV file that describes all chunks
     to be processed during parallel inference. Each row in the CSV represents
-    one chunk's core region (without border). The manifest is intended to be
-    used with SLURM job arrays where each task processes one row.
+    one chunk's core region (without border) along with the input and output
+    zarr paths. The manifest is intended to be used with SLURM job arrays
+    where each task processes one row.
 
     The function also creates the output zarr array with the same shape and
     chunk structure as the input.
@@ -60,6 +61,8 @@ def initialize_parallel_inference(
     Notes
     -----
     The output CSV (chunk_table) has the following columns:
+    - input_zarr_path: Path to the input zarr array
+    - output_zarr_path: Path to the output zarr array
     - z_start, z_end: Start and end indices for z dimension (core region)
     - y_start, y_end: Start and end indices for y dimension (core region)
     - x_start, x_end: Start and end indices for x dimension (core region)
@@ -120,6 +123,10 @@ def initialize_parallel_inference(
     # Generate chunk information
     chunk_records = []
 
+    # Convert paths to strings for CSV storage
+    input_path_str = str(input_zarr_path)
+    output_path_str = str(output_zarr_path)
+
     for i in range(n_chunks_per_dim[0]):
         for j in range(n_chunks_per_dim[1]):
             for k in range(n_chunks_per_dim[2]):
@@ -136,6 +143,8 @@ def initialize_parallel_inference(
                 # Create record for this chunk
                 chunk_records.append(
                     {
+                        "input_zarr_path": input_path_str,
+                        "output_zarr_path": output_path_str,
                         "z_start": z_start,
                         "z_end": z_end,
                         "y_start": y_start,
@@ -158,44 +167,61 @@ def initialize_parallel_inference(
 
 
 def infer_on_chunk(
-    chunk_id: int,
-    manifest_path: str,
     input_zarr_path: str,
     output_zarr_path: str,
-    model: Callable[[np.ndarray], np.ndarray],
+    inference_function: Callable[[np.ndarray], np.ndarray],
+    z_start: int,
+    z_end: int,
+    y_start: int,
+    y_end: int,
+    x_start: int,
+    x_end: int,
+    border_z: int,
+    border_y: int,
+    border_x: int,
 ) -> None:
     """Process a single chunk by running inference with a provided model.
 
-    This function reads chunk information from a manifest CSV, loads the
-    expanded chunk (core + border) from the input zarr, runs inference using
-    the provided model callable, extracts the core region from the result,
-    and writes it to the output zarr.
+    This function loads the expanded chunk (core + border) from the input zarr,
+    runs inference using the provided model callable, extracts the core region
+    from the result, and writes it to the output zarr.
 
     The border is used to prevent edge artifacts during inference but is
     not written to the output.
 
     Parameters
     ----------
-    chunk_id : int
-        Index of the chunk to process (0-based, corresponds to row in manifest).
-        This should typically be set to SLURM_ARRAY_TASK_ID in HPC environments.
-    manifest_path : str
-        Path to the chunk_table CSV manifest created by create_inference_job_manifest.
     input_zarr_path : str
         Path to the input zarr array.
     output_zarr_path : str
         Path to the output zarr array (must already exist).
-    model : Callable[[np.ndarray], np.ndarray]
+    inference_function : Callable[[np.ndarray], np.ndarray]
         A callable that takes a 3D numpy array (the expanded chunk with border)
         and returns a 3D numpy array of predictions. The model should be
         pre-loaded and ready for inference (e.g., already moved to GPU if needed).
+    z_start : int
+        Start index for z dimension (core region).
+    z_end : int
+        End index for z dimension (core region).
+    y_start : int
+        Start index for y dimension (core region).
+    y_end : int
+        End index for y dimension (core region).
+    x_start : int
+        Start index for x dimension (core region).
+    x_end : int
+        End index for x dimension (core region).
+    border_z : int
+        Border size for z dimension in voxels.
+    border_y : int
+        Border size for y dimension in voxels.
+    border_x : int
+        Border size for x dimension in voxels.
 
     Raises
     ------
     ValueError
-        If chunk_id is out of range or if model output shape is incompatible.
-    IndexError
-        If chunk_id does not exist in the manifest.
+        If model output shape is incompatible.
 
     Notes
     -----
@@ -205,51 +231,7 @@ def infer_on_chunk(
 
     The function handles cases where the border may be truncated at array
     boundaries (e.g., chunks at the edge of the image).
-
-    Examples
-    --------
-    >>> import torch
-    >>> # Load your model once before calling infer_on_chunk
-    >>> model = torch.load("model.pth").cuda().eval()
-    >>> def model_fn(x):
-    ...     with torch.no_grad():
-    ...         x_tensor = torch.from_numpy(x).unsqueeze(0).unsqueeze(0).cuda()
-    ...         output = model(x_tensor)
-    ...         return output.squeeze().cpu().numpy()
-    >>> infer_on_chunk(
-    ...     chunk_id=0,
-    ...     manifest_path="chunk_table.csv",
-    ...     input_zarr_path="input.zarr",
-    ...     output_zarr_path="output.zarr",
-    ...     model=model_fn,
-    ... )
     """
-    # Read the manifest to get chunk information
-    chunk_table = pd.read_csv(manifest_path)
-
-    # Validate chunk_id
-    if chunk_id < 0 or chunk_id >= len(chunk_table):
-        raise ValueError(
-            f"chunk_id {chunk_id} is out of range. "
-            f"Manifest contains {len(chunk_table)} chunks (0-{len(chunk_table)-1})"
-        )
-
-    # Get chunk information for this chunk_id
-    chunk_info = chunk_table.iloc[chunk_id]
-
-    # Extract core chunk boundaries
-    z_start = int(chunk_info["z_start"])
-    z_end = int(chunk_info["z_end"])
-    y_start = int(chunk_info["y_start"])
-    y_end = int(chunk_info["y_end"])
-    x_start = int(chunk_info["x_start"])
-    x_end = int(chunk_info["x_end"])
-
-    # Extract border sizes
-    border_z = int(chunk_info["border_z"])
-    border_y = int(chunk_info["border_y"])
-    border_x = int(chunk_info["border_x"])
-
     # Create slice objects for core chunk
     core_chunk_slice = (
         slice(z_start, z_end),
@@ -271,7 +253,7 @@ def infer_on_chunk(
     expanded_chunk = np.array(input_zarr[expanded_slice])
 
     # Run inference on the expanded chunk
-    prediction = model(expanded_chunk)
+    prediction = inference_function(expanded_chunk)
 
     # Validate prediction shape matches expanded chunk shape
     if prediction.ndim != 3:

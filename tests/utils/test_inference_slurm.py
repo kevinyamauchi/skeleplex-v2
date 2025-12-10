@@ -122,15 +122,19 @@ def test_infer_on_chunk(tmp_path):
     # Initialize with zeros
     input_data = np.zeros(input_shape, dtype=np.float32)
 
-    # Define border region around core (2 voxels on each side)
-    # Set border region to value 2.0
-    border_slice = (slice(3, 12), slice(3, 12), slice(3, 12))
-    input_data[border_slice] = 2.0
-
     # Define a core chunk region: z[5:10], y[5:10], x[5:10]
     # Set core region to value 1.0
     core_slice = (slice(5, 10), slice(5, 10), slice(5, 10))
     input_data[core_slice] = 1.0
+
+    # Define border region around core (2 voxels on each side)
+    # Set border region to value 2.0
+    border_slice = (slice(3, 12), slice(3, 12), slice(3, 12))
+    border_data = np.zeros((9, 9, 9), dtype=np.float32)
+    border_data[:] = 2.0
+    # Keep core as 1.0
+    border_data[2:7, 2:7, 2:7] = 1.0
+    input_data[border_slice] = border_data
 
     # Write to input zarr
     input_zarr[:] = input_data
@@ -146,38 +150,39 @@ def test_infer_on_chunk(tmp_path):
     )
     output_zarr[:] = np.zeros(input_shape, dtype=np.float32)
 
-    # Create manifest for this single chunk
+    # Define chunk parameters directly
     border_size = (2, 2, 2)
-    chunk_table_path = tmp_path / "chunk_table.csv"
-
-    chunk_records = [
-        {
-            "z_start": 5,
-            "z_end": 10,
-            "y_start": 5,
-            "y_end": 10,
-            "x_start": 5,
-            "x_end": 10,
-            "border_z": border_size[0],
-            "border_y": border_size[1],
-            "border_x": border_size[2],
-        }
-    ]
-    chunk_table = pd.DataFrame(chunk_records)
-    chunk_table.to_csv(chunk_table_path, index=False)
+    chunk_info = {
+        "z_start": 5,
+        "z_end": 10,
+        "y_start": 5,
+        "y_end": 10,
+        "x_start": 5,
+        "x_end": 10,
+        "border_z": border_size[0],
+        "border_y": border_size[1],
+        "border_x": border_size[2],
+    }
 
     # Define a passthrough model function
     def passthrough_model(x: np.ndarray) -> np.ndarray:
         """Simple passthrough model that returns input unchanged."""
         return x
 
-    # Process the chunk
+    # Process the chunk using the individual kwargs
     infer_on_chunk(
-        chunk_id=0,
-        manifest_path=str(chunk_table_path),
         input_zarr_path=str(input_zarr_path),
         output_zarr_path=str(output_zarr_path),
-        model=passthrough_model,
+        inference_function=passthrough_model,
+        z_start=chunk_info["z_start"],
+        z_end=chunk_info["z_end"],
+        y_start=chunk_info["y_start"],
+        y_end=chunk_info["y_end"],
+        x_start=chunk_info["x_start"],
+        x_end=chunk_info["x_end"],
+        border_z=chunk_info["border_z"],
+        border_y=chunk_info["border_y"],
+        border_x=chunk_info["border_x"],
     )
 
     # Load output and verify
@@ -188,8 +193,16 @@ def test_infer_on_chunk(tmp_path):
     core_output = output_data[core_slice]
     assert np.all(core_output == 1.0), "Core chunk should contain value 1.0"
 
+    # Border region should remain zeros (not written)
+    # Check region just outside core
+    assert output_data[3, 5, 5] == 0.0, "Border should not be written (z-)"
+    assert output_data[11, 5, 5] == 0.0, "Border should not be written (z+)"
+    assert output_data[5, 3, 5] == 0.0, "Border should not be written (y-)"
+    assert output_data[5, 11, 5] == 0.0, "Border should not be written (y+)"
+    assert output_data[5, 5, 3] == 0.0, "Border should not be written (x-)"
+    assert output_data[5, 5, 11] == 0.0, "Border should not be written (x+)"
+
     # Verify that the entire rest of the array is still zeros
-    # this includes the border region
     mask = np.ones(input_shape, dtype=bool)
     mask[core_slice] = False
     non_core_data = output_data[mask]
