@@ -5,6 +5,7 @@ This script sets up the chunk table and generates the SLURM sbatch command.
 
 from pathlib import Path
 
+from skeleplex.skeleton import get_skeletonization_model
 from skeleplex.utils import build_sbatch_command, initialize_parallel_inference
 
 if __name__ == "__main__":
@@ -52,6 +53,11 @@ if __name__ == "__main__":
         gpu_name=gpu_name,
         run_command=run_command,
     )
+
+    # download the model
+    # we do this to avoid doing it from multiple jobs in parallel
+    # during the following job array step
+    _ = get_skeletonization_model()
 
     print("Submit the following command to SLURM to start the inference:")
     print(slurm_command)
