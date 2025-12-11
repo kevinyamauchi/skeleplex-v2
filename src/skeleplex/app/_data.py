@@ -3,8 +3,10 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import numpy as np
+import zarr
 from cellier.types import MouseButton, MouseCallbackData, MouseEventType, MouseModifiers
 from cmap import Color
 from psygnal import EventedModel, Signal, SignalGroup
@@ -25,14 +27,14 @@ class SkeletonDataPaths(EventedModel):
     ----------
     image : FilePath | None
         The path to the image file.
-    segmentation : FilePath | None
+    segmentation : Path | None
         The path to the segmentation image file.
     skeleton_graph : FilePath
         The path to the skeleton graph file.
     """
 
     image: FilePath | None = None
-    segmentation: FilePath | None = None
+    segmentation: Path | None = None
     skeleton_graph: FilePath | None = None
 
     def has_paths(self) -> bool:
@@ -43,11 +45,13 @@ class SkeletonDataPaths(EventedModel):
 class ViewMode(Enum):
     """The different viewing modes.
 
+    NONE: Show no data.
     ALL: Show all data.
     BOUNDING_BOX: Show data in a specified bounding box.
     NODE: Show data around a specified node.
     """
 
+    NONE = "none"
     ALL = "all"
     BOUNDING_BOX = "bounding_box"
     NODE = "node"
@@ -138,6 +142,17 @@ class AllViewRequest(ViewRequest):
 
 
 @dataclass(frozen=True)
+class NoneViewRequest(ViewRequest):
+    """Request to view no data in the skeleton graph.
+
+    This is used for passing requests to view no data in the skeleton graph.
+    It does not require any parameters.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
 class BoundingBoxViewRequest(ViewRequest):
     """Request to view an axis-aligned bounding box region.
 
@@ -160,8 +175,8 @@ class ViewEvents(SignalGroup):
     mode = Signal()
 
 
-class DataView:
-    """A class to manage the current view on the data."""
+class SkeletonDataView:
+    """A class to manage the current view on the skeleton data."""
 
     events = ViewEvents()
 
@@ -416,6 +431,122 @@ class DataView:
             raise TypeError(f"Unknown view request type: {type(request)}.")
 
 
+class SegmentationView:
+    events = ViewEvents()
+
+    def __init__(
+        self,
+        data_manager: "DataManager",
+        bounding_box: BoundingBoxData,
+        mode: ViewMode = ViewMode.ALL,
+    ) -> None:
+        self._data_manager = data_manager
+        self._bounding_box = bounding_box
+        self._mode = mode
+
+        # initialize the data
+        self._array: np.ndarray | None = None
+        self._transform: np.ndarray | None = None
+
+    @property
+    def bounding_box(self) -> BoundingBoxData:
+        """Get the current bounding box data."""
+        return self._bounding_box
+
+    @property
+    def mode(self) -> ViewMode:
+        """Get the current view mode."""
+        return self._mode
+
+    @mode.setter
+    def mode(self, mode: ViewMode | str) -> None:
+        """Set the current view mode."""
+        if not isinstance(mode, ViewMode):
+            mode = ViewMode(mode.lower())
+
+        if mode == ViewMode.BOUNDING_BOX and not self.bounding_box.is_populated:
+            raise ValueError(
+                "The bounding box must be populated to set bounding box mode."
+            )
+        self._mode = mode
+        self.update()
+
+    @property
+    def array(self) -> np.ndarray | None:
+        """The current segmentation array for the view."""
+        return self._array
+
+    @property
+    def transform(self) -> np.ndarray | None:
+        """The current segmentation transform for the view."""
+        return self._transform
+
+    def update(self) -> None:
+        """Update the data for the currently specified view."""
+        if self._data_manager._segmentation is None:
+            # if the data isn't loaded, nothing to update
+            return
+        if self._mode == ViewMode.NONE:
+            # Don't display anything
+            self._array = None
+
+        elif self._mode == ViewMode.ALL:
+            self._array = np.asarray(self._data_manager._segmentation)
+            self._transform = np.eye(4)
+
+        elif self._mode == ViewMode.BOUNDING_BOX:
+            self._array = np.asarray(
+                self._data_manager.segmentation[
+                    self.bounding_box.min_coordinate[
+                        0
+                    ] : self.bounding_box.max_coordinate[0],
+                    self.bounding_box.min_coordinate[
+                        1
+                    ] : self.bounding_box.max_coordinate[1],
+                    self.bounding_box.min_coordinate[
+                        2
+                    ] : self.bounding_box.max_coordinate[2],
+                ]
+            )
+
+            # we have to swap the 0, 2 axes to since the volume gets rendered as z,y,x
+            # I'm not sure if we should swap the volume axes instead
+            transform = np.eye(4)
+            transform[0, 3] = self.bounding_box.min_coordinate[2]
+            transform[1, 3] = self.bounding_box.min_coordinate[1]
+            transform[2, 3] = self.bounding_box.min_coordinate[0]
+            self._transform = transform
+        else:
+            raise NotImplementedError(f"View mode {self._mode} not implemented.")
+
+        # Emit signal that the view data has been updated
+        self.events.data()
+
+    def _on_view_request(self, request: BoundingBoxViewRequest):
+        """Handle a request to change the view.
+
+        This updates the bounding box and view mode based on the request.
+        This is generally called by the GUI widget events.
+        """
+        if isinstance(request, NoneViewRequest):
+            self.mode = ViewMode.NONE
+
+        elif isinstance(request, AllViewRequest):
+            self.mode = ViewMode.ALL
+
+        elif isinstance(request, BoundingBoxViewRequest):
+            # set the bounding box coordinates
+            # use the private attribute to prevent the event from being emitted.
+            self.bounding_box._min_coordinate = request.minimum.astype(np.int64)
+            self.bounding_box._max_coordinate = request.maximum.astype(np.int64)
+
+            # set the view mode to bounding box
+            self.mode = ViewMode.BOUNDING_BOX
+
+        else:
+            raise TypeError(f"Unknown view request type: {type(request)}.")
+
+
 class EdgeSelectionManager(EventedModel):
     """Class to manage selection of edge in the viewer.
 
@@ -571,8 +702,15 @@ class DataManager:
     ) -> None:
         self._file_paths = file_paths
 
-        self._view = DataView(
+        self._skeleton_view = SkeletonDataView(
             data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
+        )
+
+        # self._segmentation_view = SegmentationView(
+        #     data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
+        # )
+        self._segmentation_view = SegmentationView(
+            data_manager=self, mode=ViewMode.NONE, bounding_box=BoundingBoxData()
         )
 
         # make the selection model
@@ -591,7 +729,7 @@ class DataManager:
             )
         self._edge_colormap = edge_colormap
 
-        # initialize the data
+        # initialize the skeleton data data
         self._skeleton_graph: SkeletonGraph | None = None
         self._node_coordinates: np.ndarray | None = None
         self._edge_coordinates: np.ndarray | None = None
@@ -599,11 +737,14 @@ class DataManager:
         self._edge_keys: np.ndarray | None = None
         self._edge_colors: np.ndarray | None = None
 
+        # initialize the segmentation data
+        self._segmentation = None
+
         if self.file_paths.has_paths() and load_data:
             self.load()
 
         # connect the event for updating the view when the data is changed
-        self.events.data.connect(self._view.update)
+        self.events.data.connect(self._skeleton_view.update)
 
     @property
     def file_paths(self) -> SkeletonDataPaths:
@@ -611,9 +752,14 @@ class DataManager:
         return self._file_paths
 
     @property
-    def view(self) -> DataView:
+    def skeleton_view(self) -> SkeletonDataView:
         """Get the current data view."""
-        return self._view
+        return self._skeleton_view
+
+    @property
+    def segmentation_view(self) -> SegmentationView:
+        """Get the current segmentation view."""
+        return self._segmentation_view
 
     @property
     def selection(self) -> SelectionManager:
@@ -621,9 +767,14 @@ class DataManager:
         return self._selection
 
     @property
-    def skeleton_graph(self) -> SkeletonGraph:
+    def skeleton_graph(self) -> SkeletonGraph | None:
         """Get the skeleton graph."""
         return self._skeleton_graph
+
+    @property
+    def segmentation(self) -> zarr.Array | None:
+        """Get the segmentation zarr array."""
+        return self._segmentation
 
     @property
     def node_coordinates(self) -> np.ndarray | None:
@@ -702,8 +853,8 @@ class DataManager:
 
     def load(self) -> None:
         """Load data."""
-        # load the skeleton graph
         if self.file_paths.skeleton_graph:
+            # load the skeleton graph
             log.info(f"Loading skeleton graph from {self.file_paths.skeleton_graph}")
             self._skeleton_graph = SkeletonGraph.from_json_file(
                 self.file_paths.skeleton_graph
@@ -714,6 +865,14 @@ class DataManager:
         else:
             log.info("No skeleton graph loaded.")
             self._skeleton_graph = None
+
+        if self.file_paths.segmentation:
+            log.info(f"Segmentation path set to {self.file_paths.segmentation}")
+            self._segmentation = zarr.open(self.file_paths.segmentation, mode="r")
+            print(self._segmentation)
+        else:
+            log.info("No segmentation path set.")
+            self._segmentation = None
 
         self.events.data.emit()
 
@@ -821,10 +980,10 @@ class DataManager:
 
         # get the edge key from the vertex index
         if click_source == "data":
-            edge_key_numpy = self.view.edge_keys[vertex_index]
+            edge_key_numpy = self.skeleton_view.edge_keys[vertex_index]
             edge_key = (int(edge_key_numpy[0]), int(edge_key_numpy[1]))
         elif click_source == "highlight":
-            edge_key = tuple(self.view.highlighted_edge_keys[vertex_index])
+            edge_key = tuple(self.skeleton_view.highlighted_edge_keys[vertex_index])
         else:
             raise ValueError(f"Unknown click source: {click_source}")
 
@@ -865,9 +1024,9 @@ class DataManager:
 
         # get the edge key from the vertex index
         if click_source == "data":
-            node_key = int(self.view.node_keys[vertex_index])
+            node_key = int(self.skeleton_view.node_keys[vertex_index])
         elif click_source == "highlight":
-            node_key = int(self.view.highlighted_node_keys[vertex_index])
+            node_key = int(self.skeleton_view.highlighted_node_keys[vertex_index])
         else:
             raise ValueError(f"Unknown click source: {click_source}")
 

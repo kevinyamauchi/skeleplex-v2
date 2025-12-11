@@ -14,6 +14,7 @@ _app_ref: QApplication | None = None
 
 def view_skeleton(
     graph_path: str,
+    segmentation_path: str | None = None,
     launch_widgets: bool = True,
 ):
     """Launch the skeleton viewer application.
@@ -22,6 +23,9 @@ def view_skeleton(
     ----------
     graph_path : str
         Path to the skeleton graph JSON file.
+    segmentation_path : str
+        Path to the segmentation image file.
+        Must be a zarr file.
     launch_widgets : bool, optional
         Whether to launch the auxiliary widgets for curation.
         Defaults to True.
@@ -40,7 +44,12 @@ def view_skeleton(
     _app_ref = qapp
 
     # load the data
-    data_manager = DataManager(file_paths=SkeletonDataPaths(skeleton_graph=graph_path))
+    data_manager = DataManager(
+        file_paths=SkeletonDataPaths(
+            skeleton_graph=graph_path,
+            segmentation=segmentation_path,
+        )
+    )
 
     # make the viewer
     viewer = SkelePlexApp(data=data_manager)

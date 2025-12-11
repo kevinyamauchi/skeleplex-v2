@@ -413,11 +413,11 @@ class CurationManager:
         max_coordinate = node_coordinate + half_width
 
         # set the bounding box in the viewer
-        self._data.view.bounding_box._min_coordinate = min_coordinate
-        self._data.view.bounding_box._max_coordinate = max_coordinate
+        self._data.skeleton_view.bounding_box._min_coordinate = min_coordinate
+        self._data.skeleton_view.bounding_box._max_coordinate = max_coordinate
 
         # set the render mode to bounding box
-        self._data.view.mode = "bounding_box"
+        self._data.skeleton_view.mode = "bounding_box"
 
     def _update_and_request_redraw(
         self, clear_edge_selection: bool = True, clear_node_selection: bool = True
@@ -435,7 +435,7 @@ class CurationManager:
         self._data._update_node_coordinates()
 
         # Update the data view
-        self._data.view.update()
+        self._data.skeleton_view.update()
 
 
 def make_split_edge_widget(viewer):

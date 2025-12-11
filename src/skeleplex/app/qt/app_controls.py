@@ -25,6 +25,7 @@ from skeleplex.app._data import (
     BoundingBoxViewRequest,
     EdgeSelectionPasteRequest,
     NodeSelectionPasteRequest,
+    NoneViewRequest,
     SkeletonDataPaths,
     ViewRequest,
 )
@@ -79,6 +80,34 @@ class ViewAllModeControls(QGroupBox):
         self.render_requested.emit(AllViewRequest())
 
 
+class ViewNoneModeControls(QGroupBox):
+    """A widget for controlling the view none mode."""
+
+    render_requested = Signal(NoneViewRequest)
+
+    def __init__(self, parent=None):
+        super().__init__(title="View none controls", parent=parent)
+
+        # button to render the view
+        self.render_button = QPushButton("Render", parent=self)
+
+        # connect the button click event
+        self.render_button.clicked.connect(self._on_render_button_clicked)
+
+        # make the layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.render_button)
+        self.setLayout(layout)
+
+        # set the style
+        self.setStyleSheet(GROUP_BOX_STYLE)
+
+    def _on_render_button_clicked(self):
+        """Handle the render button click event."""
+        # Emit a signal to request rendering the view
+        self.render_requested.emit(NoneViewRequest())
+
+
 class ViewBoundingBoxControls(QGroupBox):
     """A widget for controlling the bounding box view mode."""
 
@@ -114,7 +143,7 @@ class ViewBoundingBoxControls(QGroupBox):
         )
 
 
-class DataViewWidget(FlatHGroupBox):
+class SkeletonDataViewWidget(FlatHGroupBox):
     """A widget for selecting which regions of the data are in view."""
 
     # signal gets emitted when a view request is made
@@ -122,7 +151,7 @@ class DataViewWidget(FlatHGroupBox):
 
     def __init__(self, collapsible: bool = False, parent: QWidget | None = None):
         super().__init__(
-            title="Data View",
+            title="Skeleton View",
             accent_color="#b7e2d8",
             collapsible=collapsible,
             parent=parent,
@@ -176,6 +205,104 @@ class DataViewWidget(FlatHGroupBox):
             # Bounding box controls selected
             self.view_all_controls.setVisible(False)
             self.view_bounding_box_controls.setVisible(True)
+
+    def _on_view_requested(self, request: ViewRequest):
+        """Relay the view request when one of the subwidgets make a request.
+
+        Parameters
+        ----------
+        request : ViewRequest
+            The view request to relay.
+        """
+        self.view_requested.emit(request)
+
+
+class SegmentationDataViewWidget(FlatHGroupBox):
+    """A widget for selecting which regions of the data are in view."""
+
+    # signal gets emitted when a view request is made
+    view_requested = Signal(ViewRequest)
+
+    def __init__(self, collapsible: bool = False, parent: QWidget | None = None):
+        super().__init__(
+            title="Segmentation View",
+            accent_color="#b7e2d8",
+            collapsible=collapsible,
+            parent=parent,
+        )
+
+        # buttons for the mode
+        self.mode_buttons = QButtonGroup(parent=self)
+        self.none_button = QRadioButton("None", parent=self)
+        self.none_button.setChecked(True)
+        self.all_button = QRadioButton("All", parent=self)
+        self.bounding_box_button = QRadioButton("Bounding box", parent=self)
+        self.mode_buttons.addButton(self.none_button)
+        self.mode_buttons.addButton(self.all_button)
+        self.mode_buttons.addButton(self.bounding_box_button)
+        self.mode_buttons.setExclusive(True)
+        self.button_box = QGroupBox(title="View mode", parent=self)
+        self.button_box.setStyleSheet(GROUP_BOX_STYLE)
+        layout = QVBoxLayout()
+        layout.addWidget(self.none_button)
+        layout.addWidget(self.all_button)
+        layout.addWidget(self.bounding_box_button)
+        self.button_box.setAutoFillBackground(True)
+        self.button_box.setLayout(layout)
+
+        # make the view none widget
+        self.view_none_controls = ViewNoneModeControls(parent=self)
+
+        # Make the view all widget
+        self.view_all_controls = ViewAllModeControls(parent=self)
+        self.view_all_controls.setVisible(False)
+
+        # make the view bounding box widget
+        self.view_bounding_box_controls = ViewBoundingBoxControls(parent=self)
+        self.view_bounding_box_controls.setVisible(False)
+
+        # connect the view none event
+        self.view_none_controls.render_requested.connect(self._on_view_requested)
+
+        # connect the view all event
+        self.view_all_controls.render_requested.connect(self._on_view_requested)
+
+        # connect the view bounding box event
+        self.view_bounding_box_controls.bounding_box_widget.called.connect(
+            self._on_view_requested
+        )
+
+        # connect the mode buttons
+        self.mode_buttons.buttonClicked.connect(self._on_mode_changed)
+
+        # Add the widgets
+        self.add_widget(self.button_box)
+        self.add_widget(self.view_none_controls)
+        self.add_widget(self.view_all_controls)
+        self.add_widget(self.view_bounding_box_controls)
+
+    def _on_mode_changed(self):
+        if self.none_button.isChecked():
+            # No segmentation selected
+            self.view_none_controls.setVisible(True)
+
+            # set the other controls to invisible
+            self.view_all_controls.setVisible(False)
+            self.view_bounding_box_controls.setVisible(False)
+        elif self.all_button.isChecked():
+            # View all controls selected
+            self.view_all_controls.setVisible(True)
+
+            # set the other controls to invisible
+            self.view_none_controls.setVisible(False)
+            self.view_bounding_box_controls.setVisible(False)
+        else:
+            # Bounding box controls selected
+            self.view_bounding_box_controls.setVisible(True)
+
+            # set the other controls to invisible
+            self.view_none_controls.setVisible(False)
+            self.view_all_controls.setVisible(False)
 
     def _on_view_requested(self, request: ViewRequest):
         """Relay the view request when one of the subwidgets make a request.
@@ -291,8 +418,14 @@ class AppControlsWidget(QWidget):
         )
         stores_box.add_widget(self.load_data_widget.native)
 
-        # widget for selecting the data view
-        self.view_box = DataViewWidget(
+        # widget for selecting the skeleton data view
+        self.skeleton_view_box = SkeletonDataViewWidget(
+            collapsible=True,
+            parent=self,
+        )
+
+        # widget for selecting the segmentation data view
+        self.segmentation_view_box = SegmentationDataViewWidget(
             collapsible=True,
             parent=self,
         )
@@ -303,7 +436,8 @@ class AppControlsWidget(QWidget):
         # make the layout
         layout = QVBoxLayout()
         layout.addWidget(stores_box)
-        layout.addWidget(self.view_box)
+        layout.addWidget(self.skeleton_view_box)
+        layout.addWidget(self.segmentation_view_box)
         layout.addWidget(self.selection_box)
         layout.addStretch()
 

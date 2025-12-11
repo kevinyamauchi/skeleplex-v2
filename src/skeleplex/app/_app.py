@@ -70,8 +70,9 @@ class SkelePlexApp(Application):
         # connect the selection events
         self._connect_selection_events()
 
-        # update the data view
-        self.data.view.update()
+        # update the data views
+        self.data.skeleton_view.update()
+        self.data.segmentation_view.update()
 
     @property
     def data(self) -> DataManager:
@@ -83,7 +84,7 @@ class SkelePlexApp(Application):
         """Get the curation manager."""
         return self._curate
 
-    def load_main_viewer(self) -> None:
+    def load_main_viewer_skeleton(self) -> None:
         """Add the data to the main viewer."""
         log.debug("Loading data into the main viewer...")
         if self.data.skeleton_graph is None:
@@ -91,9 +92,22 @@ class SkelePlexApp(Application):
             return
 
         self._viewer.main_canvas.update_skeleton_geometry(
-            node_coordinates=self.data.view.node_coordinates,
-            edge_coordinates=self.data.view.edge_coordinates,
-            edge_colors=self.data.view.edge_colors,
+            node_coordinates=self.data.skeleton_view.node_coordinates,
+            edge_coordinates=self.data.skeleton_view.edge_coordinates,
+            edge_colors=self.data.skeleton_view.edge_colors,
+        )
+
+    def load_main_viewer_segmentation(self) -> None:
+        """Add the segmentation to the main viewer."""
+        log.debug("Loading segmentation into the main viewer...")
+        if self.data.segmentation is None:
+            log.debug("No segmentation image loaded.")
+            return
+        print("Loading segmentation into main viewer...")
+
+        self._viewer.main_canvas.update_segmentation_image(
+            image=self.data.segmentation_view.array,
+            transform=self.data.segmentation_view.transform,
         )
 
     def look_at_skeleton(self) -> None:
@@ -118,10 +132,13 @@ class SkelePlexApp(Application):
             highlighted_edge_keys = []
             for edge_index in event:
                 edge_mask = np.all(
-                    np.equal(self.data.view.edge_keys, np.asarray(edge_index)), axis=1
+                    np.equal(self.data.skeleton_view.edge_keys, np.asarray(edge_index)),
+                    axis=1,
                 )
-                coordinates.append(self.data.view.edge_coordinates[edge_mask])
-                highlighted_edge_keys.append(self.data.view.edge_keys[edge_mask])
+                coordinates.append(self.data.skeleton_view.edge_coordinates[edge_mask])
+                highlighted_edge_keys.append(
+                    self.data.skeleton_view.edge_keys[edge_mask]
+                )
             coordinates = np.concatenate(coordinates)
             highlighted_edge_keys = np.concatenate(highlighted_edge_keys)
 
@@ -129,7 +146,7 @@ class SkelePlexApp(Application):
         self._viewer.main_canvas.set_edge_highlight(edge_coordinates=coordinates)
 
         # store the highlighted edge keys
-        self.data.view._highlighted_edge_keys = highlighted_edge_keys
+        self.data.skeleton_view._highlighted_edge_keys = highlighted_edge_keys
 
     def _on_node_selection_change(self, event) -> None:
         """Handle a change in the node selection."""
@@ -141,10 +158,10 @@ class SkelePlexApp(Application):
             highlighted_node_keys = []
             for node_key in event:
                 view_coordinate_index = np.argwhere(
-                    self.data.view.node_keys == node_key
+                    self.data.skeleton_view.node_keys == node_key
                 )[0]
                 coordinates.append(
-                    self.data.view.node_coordinates[view_coordinate_index]
+                    self.data.skeleton_view.node_coordinates[view_coordinate_index]
                 )
                 highlighted_node_keys.append(node_key)
             coordinates = np.atleast_2d(np.concatenate(coordinates))
@@ -154,7 +171,7 @@ class SkelePlexApp(Application):
         self._viewer.main_canvas.set_node_highlight(node_coordinates=coordinates)
 
         # store the highlighted edge keys
-        self.data.view._highlighted_node_keys = highlighted_node_keys
+        self.data.skeleton_view._highlighted_node_keys = highlighted_node_keys
 
     def _register_data_actions(self) -> None:
         """Register actions for adding/removing data to/from the viewer."""
@@ -164,7 +181,7 @@ class SkelePlexApp(Application):
                 id=CommandId.LOAD_DATA,
                 title="Load data",
                 icon="fa6-solid:folder-open",
-                callback=self.load_main_viewer,
+                callback=self.load_main_viewer_skeleton,
                 menus=[MenuRule(id=MenuId.DATA)],
             )
         )
@@ -233,13 +250,23 @@ class SkelePlexApp(Application):
             self.data._update_paths_load_data
         )
 
-        # event for updating the view when the render button is pressed
-        self._main_window.app_controls.widget().view_box.view_requested.connect(
-            self.data.view._on_view_request
+        # event for updating the skeleton view when the render button is pressed
+        self._main_window.app_controls.widget().skeleton_view_box.view_requested.connect(
+            self.data.skeleton_view._on_view_request
         )
 
-        # event for updating the main viewer when the data paths are updated
-        self.data.view.events.data.connect(self.load_main_viewer)
+        # event for updating the segmentation view when the render button is pressed
+        self._main_window.app_controls.widget().segmentation_view_box.view_requested.connect(
+            self.data.segmentation_view._on_view_request
+        )
+
+        # event for updating the main viewer skeleton when the data view is updated
+        self.data.skeleton_view.events.data.connect(self.load_main_viewer_skeleton)
+
+        # event for updating the main viewer segmentation when the data view is updated
+        self.data.segmentation_view.events.data.connect(
+            self.load_main_viewer_segmentation
+        )
 
     def _connect_selection_events(self) -> None:
         """Connect the events for handling changes to the data selection state.
