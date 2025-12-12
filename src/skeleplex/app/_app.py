@@ -103,7 +103,6 @@ class SkelePlexApp(Application):
         if self.data.segmentation is None:
             log.debug("No segmentation image loaded.")
             return
-        print("Loading segmentation into main viewer...")
 
         self._viewer.main_canvas.update_segmentation_image(
             image=self.data.segmentation_view.array,
