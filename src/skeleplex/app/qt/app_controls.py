@@ -24,9 +24,10 @@ from skeleplex.app._data import (
     AllViewRequest,
     BoundingBoxViewRequest,
     EdgeSelectionPasteRequest,
+    ImageFile,
     NodeSelectionPasteRequest,
     NoneViewRequest,
-    SkeletonDataPaths,
+    SkeletonGraphFile,
     ViewRequest,
 )
 from skeleplex.app.qt.flat_group_box import FlatHGroupBox, FlatVGroupBox
@@ -435,15 +436,13 @@ class LoadSkeletonDataGroupBox(QGroupBox):
     def _load_skeleton_gui(
         self,
         graph_path: Path | None = None,
-    ) -> SkeletonDataPaths:
+    ) -> SkeletonGraphFile:
         """Magicgui callable to generate skeleton loading widget.
 
         This is used to generate a magicgui widget
         """
-        return SkeletonDataPaths(
-            image=None,
-            segmentation=None,
-            skeleton_graph=graph_path,
+        return SkeletonGraphFile(
+            path=graph_path,
         )
 
 
@@ -453,7 +452,12 @@ class LoadSegmentationDataGroupBox(QGroupBox):
     def __init__(self, parent=None):
         super().__init__(title="Segmentation", parent=parent)
 
-        self.load_widget = magicgui(self._load_segmentation_gui, call_button="load")
+        self.load_widget = magicgui(
+            self._load_segmentation_gui,
+            call_button="load",
+            array_path={"mode": "d"},
+            voxel_size_microns={"label": "Voxel size (μm)"},
+        )
 
         # make the layout
         layout = QVBoxLayout()
@@ -467,15 +471,14 @@ class LoadSegmentationDataGroupBox(QGroupBox):
         self,
         array_path: Path | None = None,
         voxel_size_microns: tuple[float, float, float] = (1, 1, 1),
-    ) -> SkeletonDataPaths:
+    ) -> ImageFile:
         """Magicgui callable to generate skeleton loading widget.
 
         This is used to generate a magicgui widget
         """
-        return SkeletonDataPaths(
-            image=None,
-            segmentation=array_path,
-            skeleton_graph=None,
+        return ImageFile(
+            path=array_path,
+            voxel_size_um=voxel_size_microns,
         )
 
 
@@ -490,12 +493,12 @@ class AppControlsWidget(QWidget):
 
         # make the widgets for loading data
         self.load_skeleton_group_box = LoadSkeletonDataGroupBox(parent=self)
-        self.load_segmentation_widget = LoadSegmentationDataGroupBox(parent=self)
+        self.load_segmentation_group_box = LoadSegmentationDataGroupBox(parent=self)
         stores_box = FlatVGroupBox(
             "Data Stores", accent_color="#b7e2d8", collapsible=True, parent=self
         )
         stores_box.add_widget(self.load_skeleton_group_box)
-        stores_box.add_widget(self.load_segmentation_widget)
+        stores_box.add_widget(self.load_segmentation_group_box)
 
         # widget for selecting the skeleton data view
         self.skeleton_view_box = SkeletonDataViewWidget(

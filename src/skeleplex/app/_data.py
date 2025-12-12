@@ -540,8 +540,6 @@ class SegmentationView:
                 bounding_box_max_vx, segmentation_shape
             ).astype(np.int64)
 
-            print(bounding_box_min_vx, bounding_box_max_vx)
-
             self._array = np.asarray(
                 self._data_manager.segmentation[
                     bounding_box_min_vx[0] : bounding_box_max_vx[0],
@@ -904,8 +902,8 @@ class DataManager:
             # update the data event for triggering redraw
             self.events.data.emit()
 
-    def load(self) -> None:
-        """Load data."""
+    def _load_skeleton(self):
+        """Load the skeleton graph data."""
         if self.files.skeleton_graph:
             # load the skeleton graph
             log.info(f"Loading skeleton graph from {self.files.skeleton_graph}")
@@ -919,14 +917,22 @@ class DataManager:
             log.info("No skeleton graph loaded.")
             self._skeleton_graph = None
 
+    def _load_segmentation(self):
+        """Load the segmentation data."""
         if self.files.segmentation:
             log.info(f"Segmentation path set to {self.files.segmentation}")
             self._segmentation = zarr.open(self.files.segmentation.path, mode="r")
-            print(self._segmentation)
+
         else:
             log.info("No segmentation path set.")
             self._segmentation = None
 
+    def load(self) -> None:
+        """Load data."""
+        self._load_skeleton()
+        self._load_segmentation()
+
+        # Emit the event to trigger re-slicing and re-rendering
         self.events.data.emit()
 
     def to_dict(self) -> dict:
@@ -993,19 +999,26 @@ class DataManager:
         # map the edge keys to colors using the colormap
         self._edge_colors = self.edge_colormap.map_array(self._edge_keys)
 
-    def _update_paths_load_data(
+    def _update_skeleton_file_load_data(
         self,
-        new_data_paths: SkeletonDataPaths,
+        new_skeleton_file: SkeletonGraphFile,
     ) -> None:
         """Update the file paths and load the new data.
 
         This is a method intended to be used to generate a magicgui widget
         for the GUI.
         """
-        self.files.image = new_data_paths.image
-        self.files.segmentation = new_data_paths.segmentation
-        self.files.skeleton_graph = new_data_paths.skeleton_graph
-        self.load()
+        self.files.skeleton_graph = new_skeleton_file
+        self._load_skeleton()
+        self.events.data.emit()
+
+    def _update_segmentation_file_load_data(
+        self,
+        new_segmentation_file: ImageFile,
+    ) -> None:
+        self.files.segmentation = new_segmentation_file
+        self._load_segmentation()
+        self.events.data.emit()
 
     def _on_edge_selection_click(
         self, event: MouseCallbackData, click_source: str = "data"

@@ -31,7 +31,7 @@ def view_skeleton(
     ----------
     graph_path : str
         Path to the skeleton graph JSON file.
-    segmentation_path : str
+    segmentation_path : str | None
         Path to the segmentation image file.
         Must be a zarr file.
     segmentation_voxel_size_um : tuple[float, float, float]
@@ -60,6 +60,8 @@ def view_skeleton(
             path=Path(segmentation_path),
             voxel_size_um=segmentation_voxel_size_um,
         )
+    else:
+        segmentation_file = None
     data_manager = DataManager(
         file_paths=SkeletonDataPaths(
             skeleton_graph=skeleton_graph_file,

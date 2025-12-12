@@ -244,10 +244,15 @@ class SkelePlexApp(Application):
 
     def _connect_data_events(self) -> None:
         """Connect the events for handling changes in the data."""
-        # event for when the data loading button is pressed
-        # this updates the data paths and loads the data.
+        # events for when the data loading button is pressed
+        # this updates the skeleton paths and loads the data.
         self._main_window.app_controls.widget().load_skeleton_group_box.load_widget.called.connect(
-            self.data._update_paths_load_data
+            self.data._update_skeleton_file_load_data
+        )
+
+        # this updates the segmentation paths and loads the data.
+        self._main_window.app_controls.widget().load_segmentation_group_box.load_widget.called.connect(
+            self.data._update_segmentation_file_load_data
         )
 
         # event for updating the skeleton view when the render button is pressed

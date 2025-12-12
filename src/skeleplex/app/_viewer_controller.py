@@ -233,7 +233,6 @@ class MainCanvasController:
             The 4x4 affine transform to apply to the segmentation image.
         """
         if image is None:
-            print("no segmentation image provided")
             return
 
         # make the segmentation data store
@@ -243,19 +242,16 @@ class MainCanvasController:
                 data=image, name="label_image"
             )
             self._backend.add_data_store(data_store=self._segmentation.data_store)
-            print("Created segmentation data store")
+
         else:
             # update the data store with the new image
             self._segmentation.data_store.data = image.astype(np.uint32)
-            print("Updated segmentation data store")
 
         # make the transform into a cellier AffineTransform
         if transform is None:
             transform = AffineTransform(matrix=np.eye(4))
         else:
             transform = AffineTransform(matrix=transform)
-
-        print(transform)
 
         if self._segmentation.visual is None:
             # if the segmentation visual is not populated, create it
@@ -273,10 +269,9 @@ class MainCanvasController:
             self._backend.add_visual(
                 visual_model=labels_visual_model, scene_id=self.scene_id
             )
-            print("Created segmentation visual")
+
         else:
             self._segmentation.visual.transform = transform
-            print("Updated segmentation visual transform")
 
         # reslice the scene
         self._backend.reslice_scene(scene_id=self.scene_id)
