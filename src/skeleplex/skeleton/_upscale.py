@@ -62,7 +62,7 @@ def upscale_skeleton(
 
     # Get the connectivity graph of the original skeleton
     # Use connectivity=3 for 26-connectivity (includes diagonals)
-    edges, nodes = pixel_graph(skeleton, connectivity=3)
+    edges, nodes = pixel_graph(skeleton.astype(bool), connectivity=3)
 
     if len(nodes) == 0:
         # Empty skeleton, return empty upscaled skeleton

@@ -6,27 +6,28 @@ import pytest
 from skeleplex.skeleton import upscale_skeleton
 
 
-def test_upscale_y_skeleton_with_boundary_node():
+@pytest.mark.parametrize("skeleton_dtype", [np.bool_, np.uint8, np.int32])
+def test_upscale_y_skeleton_with_boundary_node(skeleton_dtype):
     """Test upscaling a Y-shaped skeleton with a node on the boundary."""
     # Create a 20x20x20 skeleton with a Y shape
-    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    skeleton = np.zeros((20, 20, 20), dtype=skeleton_dtype)
 
     # Create Y shape: vertical stem and two branches
     # Stem: from (10, 10, 10) to (10, 10, 15)
-    skeleton[10, 10, 10:16] = True
+    skeleton[10, 10, 10:16] = 1
 
     # Left branch: from (10, 10, 15) to (6, 6, 19)
-    skeleton[10, 10, 15] = True
-    skeleton[9, 9, 16] = True
-    skeleton[8, 8, 17] = True
-    skeleton[7, 7, 18] = True
-    skeleton[6, 6, 19] = True  # Node on boundary (z=19)
+    skeleton[10, 10, 15] = 1
+    skeleton[9, 9, 16] = 1
+    skeleton[8, 8, 17] = 1
+    skeleton[7, 7, 18] = 1
+    skeleton[6, 6, 19] = 1  # Node on boundary (z=19)
 
     # Right branch: from (10, 10, 15) to (14, 14, 19)
-    skeleton[11, 11, 16] = True
-    skeleton[12, 12, 17] = True
-    skeleton[13, 13, 18] = True
-    skeleton[14, 14, 19] = True  # Node on boundary (z=19)
+    skeleton[11, 11, 16] = 1
+    skeleton[12, 12, 17] = 1
+    skeleton[13, 13, 18] = 1
+    skeleton[14, 14, 19] = 1  # Node on boundary (z=19)
 
     # Upscale by factor of (2, 2, 2)
     upscaled = upscale_skeleton(skeleton, (2, 2, 2))
