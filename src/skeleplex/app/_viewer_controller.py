@@ -236,7 +236,7 @@ class MainCanvasController:
             print("no segmentation image provided")
             return
 
-        # make the highlight lines store
+        # make the segmentation data store
         if self._segmentation.data_store is None:
             # if the segmentation data store is not populated, create it
             self._segmentation.data_store = ImageMemoryStore(

@@ -45,16 +45,16 @@ QDockWidget {
     border: None
 }
 QDockWidget:title {
-    background: white;
+    background: #D5D6D7;
 }
 
 QDockWidget::close-button, QDockWidget::float-button {
-    border: 1px solid transparent;
-    background: white;
+    border: 0px solid transparent;
+    background: #D5D6D7;
     padding: 0px;
 }
 
 QDockWidget::close-button:hover, QDockWidget::float-button:hover {
-    background: #f3f3f3;
+    background: #D5D6D7;
 }
 """

@@ -20,6 +20,33 @@ from skeleplex.visualize import EdgeColormap, line_segment_coordinates_from_spli
 log = logging.getLogger(__name__)
 
 
+class SkeletonGraphFile(EventedModel):
+    """A class storing the state of the skeleton graph file.
+
+    Parameters
+    ----------
+    path : Path
+        The path to the skeleplex skeleton graph file.
+    """
+
+    path: Path
+
+
+class ImageFile(EventedModel):
+    """A class storing the state of the segmentation file.
+
+    Parameters
+    ----------
+    path : Path
+        The path to the segmentation image file.
+    voxel_size_um : tuple[float, float, float]
+        The voxel size of the segmentation in micrometers.
+    """
+
+    path: Path
+    voxel_size_um: tuple[float, float, float]
+
+
 class SkeletonDataPaths(EventedModel):
     """A class storing the state of the skeleton dataset.
 
@@ -34,8 +61,8 @@ class SkeletonDataPaths(EventedModel):
     """
 
     image: FilePath | None = None
-    segmentation: Path | None = None
-    skeleton_graph: FilePath | None = None
+    segmentation: ImageFile | None = None
+    skeleton_graph: SkeletonGraphFile | None = None
 
     def has_paths(self) -> bool:
         """Returns true if any of the paths are set."""
@@ -492,29 +519,46 @@ class SegmentationView:
 
         elif self._mode == ViewMode.ALL:
             self._array = np.asarray(self._data_manager._segmentation)
-            self._transform = np.eye(4)
+
+            scale = np.array(self._data_manager.segmentation_scale)
+            transform = np.eye(4)
+            transform[0, 0] = scale[2]
+            transform[1, 1] = scale[1]
+            transform[2, 2] = scale[0]
+            self._transform = transform
 
         elif self._mode == ViewMode.BOUNDING_BOX:
+            scale = np.array(self._data_manager.segmentation_scale)
+            segmentation_shape = self._data_manager._segmentation.shape
+            # get the bounding box in voxel coordinates
+            bounding_box_min_vx = np.round(self.bounding_box.min_coordinate / scale)
+            bounding_box_max_vx = np.round(self.bounding_box.max_coordinate / scale)
+
+            # clamp the bounding box to the segmentation shape
+            bounding_box_min_vx = np.maximum(bounding_box_min_vx, 0).astype(np.int64)
+            bounding_box_max_vx = np.minimum(
+                bounding_box_max_vx, segmentation_shape
+            ).astype(np.int64)
+
+            print(bounding_box_min_vx, bounding_box_max_vx)
+
             self._array = np.asarray(
                 self._data_manager.segmentation[
-                    self.bounding_box.min_coordinate[
-                        0
-                    ] : self.bounding_box.max_coordinate[0],
-                    self.bounding_box.min_coordinate[
-                        1
-                    ] : self.bounding_box.max_coordinate[1],
-                    self.bounding_box.min_coordinate[
-                        2
-                    ] : self.bounding_box.max_coordinate[2],
+                    bounding_box_min_vx[0] : bounding_box_max_vx[0],
+                    bounding_box_min_vx[1] : bounding_box_max_vx[1],
+                    bounding_box_min_vx[2] : bounding_box_max_vx[2],
                 ]
             )
 
             # we have to swap the 0, 2 axes to since the volume gets rendered as z,y,x
             # I'm not sure if we should swap the volume axes instead
             transform = np.eye(4)
-            transform[0, 3] = self.bounding_box.min_coordinate[2]
-            transform[1, 3] = self.bounding_box.min_coordinate[1]
-            transform[2, 3] = self.bounding_box.min_coordinate[0]
+            transform[0, 0] = scale[2]
+            transform[1, 1] = scale[1]
+            transform[2, 2] = scale[0]
+            transform[0, 3] = bounding_box_min_vx[2] * scale[2]
+            transform[1, 3] = bounding_box_min_vx[1] * scale[1]
+            transform[2, 3] = bounding_box_min_vx[0] * scale[0]
             self._transform = transform
         else:
             raise NotImplementedError(f"View mode {self._mode} not implemented.")
@@ -706,9 +750,6 @@ class DataManager:
             data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
         )
 
-        # self._segmentation_view = SegmentationView(
-        #     data_manager=self, mode=ViewMode.ALL, bounding_box=BoundingBoxData()
-        # )
         self._segmentation_view = SegmentationView(
             data_manager=self, mode=ViewMode.NONE, bounding_box=BoundingBoxData()
         )
@@ -739,15 +780,16 @@ class DataManager:
 
         # initialize the segmentation data
         self._segmentation = None
+        self._segmentation_scale = None
 
-        if self.file_paths.has_paths() and load_data:
+        if self.files.has_paths() and load_data:
             self.load()
 
         # connect the event for updating the view when the data is changed
         self.events.data.connect(self._skeleton_view.update)
 
     @property
-    def file_paths(self) -> SkeletonDataPaths:
+    def files(self) -> SkeletonDataPaths:
         """Get the file paths."""
         return self._file_paths
 
@@ -775,6 +817,17 @@ class DataManager:
     def segmentation(self) -> zarr.Array | None:
         """Get the segmentation zarr array."""
         return self._segmentation
+
+    @property
+    def segmentation_scale(self) -> tuple[float, float, float] | None:
+        """Get the scale for the segmentation rendering.
+
+        Since the viewer coordinate system is in microns,
+        this is equivalent to segmentation voxel size in micrometers.
+        """
+        if self.files.segmentation is not None:
+            return self.files.segmentation.voxel_size_um
+        return None
 
     @property
     def node_coordinates(self) -> np.ndarray | None:
@@ -853,11 +906,11 @@ class DataManager:
 
     def load(self) -> None:
         """Load data."""
-        if self.file_paths.skeleton_graph:
+        if self.files.skeleton_graph:
             # load the skeleton graph
-            log.info(f"Loading skeleton graph from {self.file_paths.skeleton_graph}")
+            log.info(f"Loading skeleton graph from {self.files.skeleton_graph}")
             self._skeleton_graph = SkeletonGraph.from_json_file(
-                self.file_paths.skeleton_graph
+                self.files.skeleton_graph.path
             )
             self._update_node_coordinates()
             self._update_edge_coordinates()
@@ -866,9 +919,9 @@ class DataManager:
             log.info("No skeleton graph loaded.")
             self._skeleton_graph = None
 
-        if self.file_paths.segmentation:
-            log.info(f"Segmentation path set to {self.file_paths.segmentation}")
-            self._segmentation = zarr.open(self.file_paths.segmentation, mode="r")
+        if self.files.segmentation:
+            log.info(f"Segmentation path set to {self.files.segmentation}")
+            self._segmentation = zarr.open(self.files.segmentation.path, mode="r")
             print(self._segmentation)
         else:
             log.info("No segmentation path set.")
@@ -949,9 +1002,9 @@ class DataManager:
         This is a method intended to be used to generate a magicgui widget
         for the GUI.
         """
-        self.file_paths.image = new_data_paths.image
-        self.file_paths.segmentation = new_data_paths.segmentation
-        self.file_paths.skeleton_graph = new_data_paths.skeleton_graph
+        self.files.image = new_data_paths.image
+        self.files.segmentation = new_data_paths.segmentation
+        self.files.skeleton_graph = new_data_paths.skeleton_graph
         self.load()
 
     def _on_edge_selection_click(

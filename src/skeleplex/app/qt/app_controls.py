@@ -36,7 +36,7 @@ from skeleplex.app.qt.styles import (
 
 GROUP_BOX_STYLE = """
 QGroupBox {
-    background-color: #f3f3f3;
+    background-color: #D5D6D7;
     border: 1px solid black;
     margin-top: 8px;
 }
@@ -44,12 +44,25 @@ QGroupBox::title {
     subcontrol-origin: margin;
     left: 7px;
     padding: 0px 5px 0px 5px;
-    background-color: #f3f3f3;
+    background-color: #D5D6D7;
 }
 QRadioButton {
-    background-color: #f3f3f3;
+    background-color: #D5D6D7;
+}
+
+QLineEdit {
+    border: 2px solid #E5E6E8;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QDoubleSpinBox {
+    border: 2px solid #E5E6E8;
+    border-radius: 4px;
+    background-color: #EBECED;
 }
 """
+# f3f3f3
 
 
 class ViewAllModeControls(QGroupBox):
@@ -403,6 +416,69 @@ class DataSelectorWidget(FlatHGroupBox):
         selected_widget.setText(str(paste_request.node_keys))
 
 
+class LoadSkeletonDataGroupBox(QGroupBox):
+    """A widget for loading skeleton data."""
+
+    def __init__(self, parent=None):
+        super().__init__(title="Skeleton", parent=parent)
+
+        self.load_widget = magicgui(self._load_skeleton_gui)
+
+        # make the layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.load_widget.native)
+        self.setLayout(layout)
+
+        # set the style
+        self.setStyleSheet(GROUP_BOX_STYLE)
+
+    def _load_skeleton_gui(
+        self,
+        graph_path: Path | None = None,
+    ) -> SkeletonDataPaths:
+        """Magicgui callable to generate skeleton loading widget.
+
+        This is used to generate a magicgui widget
+        """
+        return SkeletonDataPaths(
+            image=None,
+            segmentation=None,
+            skeleton_graph=graph_path,
+        )
+
+
+class LoadSegmentationDataGroupBox(QGroupBox):
+    """A widget for loading skeleton data."""
+
+    def __init__(self, parent=None):
+        super().__init__(title="Segmentation", parent=parent)
+
+        self.load_widget = magicgui(self._load_segmentation_gui, call_button="load")
+
+        # make the layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.load_widget.native)
+        self.setLayout(layout)
+
+        # set the style
+        self.setStyleSheet(GROUP_BOX_STYLE)
+
+    def _load_segmentation_gui(
+        self,
+        array_path: Path | None = None,
+        voxel_size_microns: tuple[float, float, float] = (1, 1, 1),
+    ) -> SkeletonDataPaths:
+        """Magicgui callable to generate skeleton loading widget.
+
+        This is used to generate a magicgui widget
+        """
+        return SkeletonDataPaths(
+            image=None,
+            segmentation=array_path,
+            skeleton_graph=None,
+        )
+
+
 class AppControlsWidget(QWidget):
     """A widget for the application controls.
 
@@ -412,11 +488,14 @@ class AppControlsWidget(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent=parent)
 
-        self.load_data_widget = magicgui(self._load_data_gui)
+        # make the widgets for loading data
+        self.load_skeleton_group_box = LoadSkeletonDataGroupBox(parent=self)
+        self.load_segmentation_widget = LoadSegmentationDataGroupBox(parent=self)
         stores_box = FlatVGroupBox(
             "Data Stores", accent_color="#b7e2d8", collapsible=True, parent=self
         )
-        stores_box.add_widget(self.load_data_widget.native)
+        stores_box.add_widget(self.load_skeleton_group_box)
+        stores_box.add_widget(self.load_segmentation_widget)
 
         # widget for selecting the skeleton data view
         self.skeleton_view_box = SkeletonDataViewWidget(
@@ -444,22 +523,6 @@ class AppControlsWidget(QWidget):
         layout.setAlignment(Qt.AlignTop)
 
         self.setLayout(layout)
-
-    def _load_data_gui(
-        self,
-        image_path: Path | None = None,
-        segmentation_path: Path | None = None,
-        skeleton_graph_path: Path | None = None,
-    ) -> SkeletonDataPaths:
-        """Magicgui callable to generate loading widget.
-
-        This is used to generate a magicgui widget
-        """
-        return SkeletonDataPaths(
-            image=image_path,
-            segmentation=segmentation_path,
-            skeleton_graph=skeleton_graph_path,
-        )
 
 
 class AppControlsDock(QDockWidget):

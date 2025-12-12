@@ -246,7 +246,7 @@ class SkelePlexApp(Application):
         """Connect the events for handling changes in the data."""
         # event for when the data loading button is pressed
         # this updates the data paths and loads the data.
-        self._main_window.app_controls.widget().load_data_widget.called.connect(
+        self._main_window.app_controls.widget().load_skeleton_group_box.load_widget.called.connect(
             self.data._update_paths_load_data
         )
 
