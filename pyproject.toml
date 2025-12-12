@@ -59,7 +59,7 @@ dependencies = [
 [project.optional-dependencies]
 # for visualization
 napari = ["napari[pyqt6,optional]"]
-cellier = ["cellier[pyqt]>=0.0.11",]
+cellier = ["cellier[pyqt]>=0.0.12",]
 viz = ["app-model"]
 torch = ["torch", "morphospaces>=0.0.5"]
 cupy = ["cupy-cuda12x"]

@@ -5,15 +5,20 @@ from dataclasses import dataclass
 from functools import partial
 
 import numpy as np
+from cellier.models.data_stores.image import ImageMemoryStore
 from cellier.models.data_stores.lines import LinesMemoryStore
 from cellier.models.data_stores.points import PointsMemoryStore
 from cellier.models.visuals import (
+    LabelsAppearance,
     LinesUniformAppearance,
     LinesVertexColorAppearance,
     LinesVisual,
+    MultiscaleImageVisual,
+    MultiscaleLabelsVisual,
     PointsUniformAppearance,
     PointsVisual,
 )
+from cellier.transform import AffineTransform
 from cellier.viewer_controller import CellierController
 
 from skeleplex.app.cellier.utils import make_viewer_controller, make_viewer_model
@@ -51,6 +56,14 @@ class RenderedSkeletonComponents:
         )
 
 
+@dataclass
+class RenderedSegmentationComponents:
+    """A class for storing the components for a rendered image."""
+
+    data_store: ImageMemoryStore | None = None
+    visual: MultiscaleImageVisual | None = None
+
+
 class MainCanvasController:
     """A class for controlling the main canvas."""
 
@@ -60,6 +73,7 @@ class MainCanvasController:
 
         # this will store the rendered skeleton components
         self._skeleton = RenderedSkeletonComponents()
+        self._segmentation = RenderedSegmentationComponents()
 
     @property
     def scene_id(self) -> str:
@@ -117,12 +131,16 @@ class MainCanvasController:
         # update the lines store
         if self._skeleton.edges_store is None:
             self._skeleton.edges_store = LinesMemoryStore(
-                coordinates=edge_coordinates, colors=edge_colors
+                coordinates=edge_coordinates[:, [2, 1, 0]], colors=edge_colors
             )
             self._backend.add_data_store(data_store=self._skeleton.edges_store)
         else:
-            self._skeleton.edges_store.coordinates = edge_coordinates.astype(np.float32)
-            self._skeleton.edges_store.colors = edge_colors.astype(np.float32)
+            self._skeleton.edges_store.coordinates = edge_coordinates.astype(
+                np.float32
+            )[:, [2, 1, 0]]
+            self._skeleton.edges_store.colors = edge_colors.astype(np.float32)[
+                :, [2, 1, 0]
+            ]
 
         if self._skeleton.edges_visual is None:
             # if the lines visual is not populated, create it
@@ -169,11 +187,15 @@ class MainCanvasController:
 
         if self._skeleton.node_store is None:
             # make the points store if it is not already created
-            self._skeleton.node_store = PointsMemoryStore(coordinates=node_coordinates)
+            self._skeleton.node_store = PointsMemoryStore(
+                coordinates=node_coordinates[:, [2, 1, 0]]
+            )
             self._backend.add_data_store(data_store=self._skeleton.node_store)
         else:
             # update the points store with the new coordinates
-            self._skeleton.node_store.coordinates = node_coordinates.astype(np.float32)
+            self._skeleton.node_store.coordinates = node_coordinates.astype(np.float32)[
+                :, [2, 1, 0]
+            ]
 
         if self._skeleton.node_visual is None:
             # make the points material
@@ -195,6 +217,65 @@ class MainCanvasController:
         # reslice the scene
         self._backend.reslice_scene(scene_id=self.scene_id)
 
+    def update_segmentation_image(
+        self,
+        image: np.ndarray | None,
+        transform: np.ndarray | None = None,
+    ):
+        """Update the segmentation image in the viewer.
+
+        Parameters
+        ----------
+        image : np.ndarray | None
+            The segmentation image to render.
+            If None, the segmentation image will be removed.
+        transform : np.ndarray | None
+            The 4x4 affine transform to apply to the segmentation image.
+        """
+        if image is None:
+            return
+
+        # make the segmentation data store
+        if self._segmentation.data_store is None:
+            # if the segmentation data store is not populated, create it
+            self._segmentation.data_store = ImageMemoryStore(
+                data=image, name="label_image"
+            )
+            self._backend.add_data_store(data_store=self._segmentation.data_store)
+
+        else:
+            # update the data store with the new image
+            self._segmentation.data_store.data = image.astype(np.uint32)
+
+        # make the transform into a cellier AffineTransform
+        if transform is None:
+            transform = AffineTransform(matrix=np.eye(4))
+        else:
+            transform = AffineTransform(matrix=transform)
+
+        if self._segmentation.visual is None:
+            # if the segmentation visual is not populated, create it
+            labels_material = LabelsAppearance(color_map="glasbey:glasbey")
+            labels_visual_model = MultiscaleLabelsVisual(
+                name="labels_node",
+                data_store_id=self._segmentation.data_store.id,
+                appearance=labels_material,
+                transform=transform,
+                downscale_factors=[1],
+            )
+            self._segmentation.visual = labels_visual_model
+
+            # add the visual model to the viewer
+            self._backend.add_visual(
+                visual_model=labels_visual_model, scene_id=self.scene_id
+            )
+
+        else:
+            self._segmentation.visual.transform = transform
+
+        # reslice the scene
+        self._backend.reslice_scene(scene_id=self.scene_id)
+
     def look_at_skeleton(
         self,
         view_direction: tuple[int, int, int] = (0, 0, 1),
@@ -208,7 +289,7 @@ class MainCanvasController:
         self._backend.look_at_visual(
             visual_id=self._skeleton.node_visual.id,
             view_direction=view_direction,
-            up=up,
+            up_direction=up,
         )
 
     def set_edge_highlight(
@@ -228,7 +309,7 @@ class MainCanvasController:
 
         self._skeleton.edge_highlight_store.coordinates = edge_coordinates.astype(
             np.float32
-        )
+        )[:, [2, 1, 0]]
         self._backend.reslice_scene(scene_id=self.scene_id)
 
     def set_node_highlight(
@@ -248,7 +329,7 @@ class MainCanvasController:
 
         self._skeleton.node_highlight_store.coordinates = node_coordinates.astype(
             np.float32
-        )
+        )[:, [2, 1, 0]]
         self._backend.reslice_scene(scene_id=self.scene_id)
 
     def add_skeleton_edge_callback(

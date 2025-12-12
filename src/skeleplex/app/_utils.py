@@ -1,11 +1,18 @@
 import sys
+from pathlib import Path
 
 from IPython import get_ipython
 from magicgui import magicgui
 from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import QApplication
 
-from skeleplex.app import DataManager, SkelePlexApp, SkeletonDataPaths
+from skeleplex.app import (
+    DataManager,
+    ImageFile,
+    SkelePlexApp,
+    SkeletonDataPaths,
+    SkeletonGraphFile,
+)
 from skeleplex.app._curate import ChangeBranchColorWidget, make_split_edge_widget
 
 # store reference to QApplication to prevent garbage collection
@@ -14,6 +21,8 @@ _app_ref: QApplication | None = None
 
 def view_skeleton(
     graph_path: str,
+    segmentation_path: str | None = None,
+    segmentation_voxel_size_um: tuple[float, float, float] = (1, 1, 1),
     launch_widgets: bool = True,
 ):
     """Launch the skeleton viewer application.
@@ -22,6 +31,11 @@ def view_skeleton(
     ----------
     graph_path : str
         Path to the skeleton graph JSON file.
+    segmentation_path : str | None
+        Path to the segmentation image file.
+        Must be a zarr file.
+    segmentation_voxel_size_um : tuple[float, float, float]
+        The voxel size of the segmentation in micrometers.
     launch_widgets : bool, optional
         Whether to launch the auxiliary widgets for curation.
         Defaults to True.
@@ -40,7 +54,20 @@ def view_skeleton(
     _app_ref = qapp
 
     # load the data
-    data_manager = DataManager(file_paths=SkeletonDataPaths(skeleton_graph=graph_path))
+    skeleton_graph_file = SkeletonGraphFile(path=Path(graph_path))
+    if segmentation_path is not None:
+        segmentation_file = ImageFile(
+            path=Path(segmentation_path),
+            voxel_size_um=segmentation_voxel_size_um,
+        )
+    else:
+        segmentation_file = None
+    data_manager = DataManager(
+        file_paths=SkeletonDataPaths(
+            skeleton_graph=skeleton_graph_file,
+            segmentation=segmentation_file,
+        )
+    )
 
     # make the viewer
     viewer = SkelePlexApp(data=data_manager)

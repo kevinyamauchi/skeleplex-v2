@@ -95,7 +95,7 @@ class FlatVGroupBox(QWidget):
         self,
         title: str = "",
         accent_color: str = "#b7e2d8",
-        background_color: str = "#f3f3f3",
+        background_color: str = "#D5D6D7",
         collapsible: bool = False,
         parent: QWidget | None = None,
     ):
@@ -116,7 +116,7 @@ class FlatVGroupBox(QWidget):
         # the title is clicked.
         self.title_widget.mousePressEvent = self._toggle_collapsed
 
-        self.frame = FlatHFrame(parent=self)
+        self.frame = FlatVFrame(parent=self)
 
         layout = QVBoxLayout()
         layout.setSpacing(0)
@@ -183,7 +183,7 @@ class FlatHGroupBox(QWidget):
         self,
         title: str = "",
         accent_color: str = "#b7e2d8",
-        background_color: str = "#f3f3f3",
+        background_color: str = "#D5D6D7",
         collapsible: bool = False,
         parent: QWidget | None = None,
     ):

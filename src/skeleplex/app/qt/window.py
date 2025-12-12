@@ -13,14 +13,14 @@ MIN_WINDOW_WIDTH = 1000
 MIN_WINDOW_HEIGHT = 600
 
 MAIN_WINDOW_STYLE = """
-background-color: white;
+background-color: #F5F6F7;
 color: black;
 QMainWindow {
-    background-color: white;
+    background-color: #F5F6F7;
 }
 
 QToolBar {
-    background: white;
+    background: #F5F6F7;
     border: none;
 }
 """
