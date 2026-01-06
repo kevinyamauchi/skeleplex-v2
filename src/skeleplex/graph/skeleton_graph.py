@@ -129,9 +129,9 @@ def make_graph_directed(graph: nx.Graph, origin: int) -> nx.DiGraph:
     else:
         fragments = None
 
-    di_graph = nx.DiGraph(graph)
-    di_graph.remove_edges_from(di_graph.edges - nx.bfs_edges(di_graph, origin))
-
+    di_graph = nx.DiGraph()
+    for u, v in nx.bfs_edges(di_graph, origin):
+        di_graph.add_edge(u, v, **graph[u][v])
     if fragments:
         # choose a node with the highest degree as the origin node
         # Do this for each fragment
@@ -141,10 +141,9 @@ def make_graph_directed(graph: nx.Graph, origin: int) -> nx.DiGraph:
             This is arbitrary but finding a better node
             without knowledge were the network broke is hard"""
             origin = max(fragment_subgraph.degree, key=lambda x: x[1])[0]
-            di_fragment = nx.DiGraph(fragment_subgraph)
-            di_fragment.remove_edges_from(
-                di_fragment.edges - nx.bfs_edges(di_fragment, origin)
-            )
+            di_fragment = nx.DiGraph()
+            for u, v in nx.bfs_edges(fragment_subgraph, origin):
+                di_fragment.add_edge(u, v, **fragment_subgraph[u][v])
             di_graph.add_edges_from(di_fragment.edges(data=True))
             di_graph.add_nodes_from(di_fragment.nodes(data=True))
 
