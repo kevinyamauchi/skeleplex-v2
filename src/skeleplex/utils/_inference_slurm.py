@@ -100,7 +100,7 @@ def initialize_parallel_inference(
 
     # Validate that chunk_shape is a multiple of zarr chunk size
     for i, dim_name in enumerate(["z", "y", "x"]):
-        if chunk_shape[i] % input_chunks[i] != 0:
+        if (chunk_shape[i]) % input_chunks[i] != 0:
             raise ValueError(
                 f"Processing chunk size {chunk_shape[i]} must be a multiple of "
                 f"zarr chunk size {input_chunks[i]} along {dim_name} axis (axis {i})"
@@ -318,7 +318,7 @@ def build_sbatch_command(
         Number of CPUs to allocate per task.
     n_gpus : int
         Number of GPUs to allocate per task.
-    gpu_name : str
+    gpu_name : str | None
         Name of GPU type to request (e.g., "rtx_4090").
     output_pattern : str | None
         Pattern for output log files.
@@ -333,9 +333,6 @@ def build_sbatch_command(
     sbatch_cmd : list[str]
         List of command arguments to pass to subprocess.run().
     """
-    # Build GPU specification
-    gpu_spec = f"{gpu_name}:{n_gpus}"
-
     # Build sbatch command
     sbatch_cmd = (
         "sbatch"
@@ -344,13 +341,16 @@ def build_sbatch_command(
         + f" --time={time_limit}"
         + f" --cpus-per-task={cpus_per_task}"
         + f" --mem-per-cpu={memory}"
-        + f" --gpus={gpu_spec}"
     )
 
     if output_pattern is not None:
         sbatch_cmd += f" --output={output_pattern}"
     if error_pattern is not None:
         sbatch_cmd += f" --error={error_pattern}"
+    if n_gpus > 0:
+        # Build GPU specification eg. --gpus=rtx_4090:1
+        gpu_spec = f"{gpu_name}:{n_gpus}"
+        sbatch_cmd += f" --gpus={gpu_spec}"
 
     # add the run command
     sbatch_cmd += f" --wrap='{run_command}'"
