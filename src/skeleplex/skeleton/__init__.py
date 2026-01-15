@@ -7,7 +7,10 @@ from skeleplex.skeleton._chunked_label import (
     merge_touching_labels,
     relabel_parallel,
 )
-from skeleplex.skeleton._chunked_upscale import upscale_skeleton_parallel
+from skeleplex.skeleton._chunked_upscale import (
+    upscale_skeleton_parallel,
+    upscale_skeleton_to_shape_parallel,
+)
 from skeleplex.skeleton._segment import segment
 from skeleplex.skeleton._skeletonize import skeletonize
 from skeleplex.skeleton._upscale import upscale_skeleton
@@ -25,4 +28,5 @@ __all__ = [
     "merge_touching_labels",
     "upscale_skeleton",
     "upscale_skeleton_parallel",
+    "upscale_skeleton_to_shape_parallel",
 ]
