@@ -25,4 +25,6 @@ LOBE_NAME_KEY = "lobe"
 SURFACE_ANGLE_EDGE_KEY = "surface_angle"
 ROTATION_ANGLE_VECTOR_EDGE_KEY = "rotation_angle_parent_vector_daughter_plane"
 BRANCH_CURVATURE_EDGE_KEY = "branch_curvature"
+DIAMETER_KEY = "lumen_diameter"
+TISSUE_THICKNESS_KEY = "tissue_thickness"
 
