@@ -3,13 +3,16 @@ import logging  # noqa D100
 import networkx as nx
 import numpy as np
 import functools
-
+from skeleplex.graph import SkeletonGraph
 from skeleplex.graph.constants import (
+    DIAMETER_KEY,
+    TISSUE_THICKNESS_KEY,
     BRANCH_ANGLE_EDGE_KEY,
     BRANCH_ANGLE_JUNCTION_EDGE_KEY,
     EDGE_SPLINE_KEY,
     LOBE_NAME_KEY,
     NODE_COORDINATE_KEY,
+    PARENT_EDGE_KEY,
     ROTATION_ANGLE_EDGE_KEY,
     SIBLING_ANGLE_EDGE_KEY,
     SISTER_EDGE_KEY,
@@ -127,6 +130,9 @@ def compute_midline_branch_angle_branch_nodes(graph: nx.DiGraph):
 
         end_node_coordinates = node_coordinates[edge[1]]
         branch_vector = unit_vector(end_node_coordinates - start_node_coordinates)
+
+        if np.any(np.isnan(midline_vector)) or np.any(np.isnan(branch_vector)):
+            continue
 
         if round(np.linalg.norm(midline_vector)) != 1:
             raise ValueError(f"""Midline vector is not normalized.
@@ -513,3 +519,105 @@ def compute_surface_normals_and_angles(
         skeleton.graph = graph
 
     return list_dict_normal_dicts, surface_stage_dict
+
+
+def compute_hc(graph: nx.DiGraph,
+               diameter_key: str = DIAMETER_KEY,
+               tissue_thickness_key: str = TISSUE_THICKNESS_KEY):
+    """
+    Compute Horsfield-Cummings law metrics for skeleton graph edges.
+
+    Calculates diameter ratios and Horsfield-Cummings branching angles
+    based on parent-child and sister branch relationships. Requires the
+    edge attributes for diameter, tissue thickness, parent edge, and sister edge.
+
+    Two ratios are computed:
+    - h: diameter ratio of branch to parent branch
+    - h_total: total diameter ratio including tissue thickness
+        The Horsfield-Cummings metrics (hc and hc_total) and their corresponding
+    angles (hc_theta and hc_total_theta) are also computed.
+
+    Horsfield-Cummings is defined as:
+        hc = 0.5 * ((1 + h**4 - h_sister**4) / h**2)
+        hc_total = 0.5 * ((1 + h_total**4 - h_total_sister**4) / h_total**2)
+
+    Parameters
+    ----------
+    graph : SkeletonGraph
+        The input skeleton graph.
+
+    """
+    # Extract edge attributes
+    diameter_dict = nx.get_edge_attributes(graph, diameter_key)
+    tissue_thickness_dict = nx.get_edge_attributes(graph, tissue_thickness_key)
+    parent_edge_dict = nx.get_edge_attributes(graph, PARENT_EDGE_KEY)
+    sister_edge_dict = nx.get_edge_attributes(graph, SISTER_EDGE_KEY)
+
+    # Initialize result dictionaries
+    results = {
+        'parent_diameter': {},
+        'sister_diameter': {},
+        'hc': {},
+        'hc_total': {},
+        'hc_theta': {},
+        'hc_total_theta': {},
+    }
+
+    h_dict = {}
+    h_total_dict = {}
+    h_sister_dict = {}
+    h_total_sister_dict = {}
+
+    # Process each edge
+    for edge in graph.edges():
+        diameter = diameter_dict.get(edge)
+        tissue_thickness = tissue_thickness_dict.get(edge)
+        total_diameter = diameter + tissue_thickness
+        # Process parent relationship
+        parent_edge = parent_edge_dict.get(edge)
+        if parent_edge:
+            parent_edge = tuple(parent_edge)
+            parent_diameter = diameter_dict.get(parent_edge[0])
+            parent_tissue_thickness = tissue_thickness_dict.get(parent_edge[0])
+            parent_total_diameter = parent_diameter + parent_tissue_thickness
+            results['parent_diameter'][edge] = parent_diameter
+            h_dict[edge] = diameter / parent_diameter
+            h_total_dict[edge] = total_diameter / parent_total_diameter
+        # Process sister relationship
+        sister_edge = sister_edge_dict.get(edge)
+        if sister_edge and isinstance(sister_edge[0], int):
+            sister_edge = tuple(sister_edge)
+            sister_diameter = diameter_dict.get(sister_edge)
+            sister_tissue_thickness = tissue_thickness_dict.get(sister_edge)
+            sister_total_diameter = sister_diameter + sister_tissue_thickness
+            results['sister_diameter'][edge] = sister_diameter
+            parent_diameter = results['parent_diameter'].get(edge)
+            if parent_diameter is not None:
+                parent_tissue_thickness = tissue_thickness_dict.get(
+                    next(iter(parent_edge_dict.get(edge)))
+                    )
+                parent_total_diameter = parent_diameter + parent_tissue_thickness
+                h_sister_dict[edge] = sister_diameter / parent_diameter
+                h_total_sister_dict[edge] = sister_total_diameter / parent_total_diameter
+
+        # Calculate hc metrics
+        if edge in h_sister_dict:
+            h = h_dict[edge]
+            h_sister = h_sister_dict[edge]
+            h_total = h_total_dict[edge]
+            h_total_sister = h_total_sister_dict[edge]
+
+            # Compute hc and hc_total
+            hc = 0.5 * ((1 + h**4 - h_sister**4) / h**2)
+            hc_total = 0.5 * ((1 + h_total**4 - h_total_sister**4) / h_total**2)
+
+            results['hc'][edge] = hc
+            results['hc_total'][edge] = hc_total
+            results['hc_theta'][edge] = np.rad2deg(np.arccos(hc))
+            results['hc_total_theta'][edge] = np.rad2deg(np.arccos(hc_total))
+
+    # Set all computed attributes on the graph
+    for attr_name, attr_dict in results.items():
+        nx.set_edge_attributes(graph, attr_dict, attr_name)
+
+    return graph
