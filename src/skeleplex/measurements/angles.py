@@ -3,7 +3,6 @@ import logging  # noqa D100
 import networkx as nx
 import numpy as np
 import functools
-from skeleplex.graph import SkeletonGraph
 from skeleplex.graph.constants import (
     DIAMETER_KEY,
     TISSUE_THICKNESS_KEY,
@@ -55,7 +54,10 @@ def run_all_angle_metrics(graph, **kwargs):
     for func in _ANGLE_FUNCTIONS:
         name = func.__name__
         logger.info(f"Running angle metric: {name}")
-        out = func(g, **{k: v for k, v in kwargs.items() if k in func.__code__.co_varnames})
+        out = func(
+            g,
+            **{k: v for k, v in kwargs.items() if k in func.__code__.co_varnames}
+        )
         # out can be (graph) or (graph, extra)
         if isinstance(out, tuple):
             g = out[0]
@@ -545,6 +547,10 @@ def compute_hc(graph: nx.DiGraph,
     ----------
     graph : SkeletonGraph
         The input skeleton graph.
+    diameter_key : str
+        The edge attribute key for diameter.
+    tissue_thickness_key : str
+        The edge attribute key for tissue thickness.
 
     """
     # Extract edge attributes
@@ -598,7 +604,7 @@ def compute_hc(graph: nx.DiGraph,
                     )
                 parent_total_diameter = parent_diameter + parent_tissue_thickness
                 h_sister_dict[edge] = sister_diameter / parent_diameter
-                h_total_sister_dict[edge] = sister_total_diameter / parent_total_diameter
+                h_total_sister_dict[edge] = sister_total_diameter/parent_total_diameter
 
         # Calculate hc metrics
         if edge in h_sister_dict:
