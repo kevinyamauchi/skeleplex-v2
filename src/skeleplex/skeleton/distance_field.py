@@ -7,6 +7,7 @@ from scipy.ndimage import distance_transform_edt, label, maximum_filter
 def local_normalized_distance(
     image: np.ndarray,
     max_ball_radius: int = 30,
+    return_distance: bool = False,
 ) -> np.ndarray:
     """
     Compute normalized distance transform for a binary image.
@@ -44,7 +45,10 @@ def local_normalized_distance(
         # apply maximum filter to normalize distances locally
         local_max_distance = maximum_filter(distance, size=radius * 2 + 1)
 
-        normalized_distance[mask] = distance[mask] / (local_max_distance[mask])
+        normalized_distance[mask] = distance[mask] / (local_max_distance[mask]) 
+
+    if return_distance:
+        return np.stack([distance, normalized_distance], axis=0)
 
     return normalized_distance
 
