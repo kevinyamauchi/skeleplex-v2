@@ -14,14 +14,26 @@ def test_generate_y_junction():
         radius_d2_range=(10, 15),
         d1_angle_range=(-45, 45),
         d2_angle_range=(-45, 45),
-        wiggle_factor_range=(0.01, 0.03),
         noise_magnitude_range=(8, 25),
         ellipse_ratio_range=(1.1, 1.5),
         use_gpu=False,
         seed=42,
     )
-    skeleton, distance_field = generate_y_junction(*params)
+    (segmentation,
+    distance_field_raw,
+    distance_field,
+    distance_field_squared,
+    tubular_skeleton,
+    skeleton,
+    regression_target) = generate_y_junction(*params)
 
-    assert skeleton.shape == distance_field.shape
-    assert skeleton.dtype == "int"
-    assert distance_field.dtype == "float32"
+    assert all(a.shape == skeleton.shape for a in (
+        distance_field,
+        segmentation,
+        distance_field_squared,
+        tubular_skeleton,
+        distance_field_raw,
+        regression_target,
+    ))
+    assert skeleton.dtype ==  "uint8"
+    assert distance_field.dtype == "float64"

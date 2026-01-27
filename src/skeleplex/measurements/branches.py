@@ -6,13 +6,17 @@ import networkx as nx
 import h5py
 import numpy as np
 import skimage as ski
-from skimage.morphology import binary_dilation, disk
+from skimage.morphology import dilation, disk
 import torch
 from tqdm import tqdm
 import concurrent.futures
 
 from skeleplex.measurements.utils import grey2rgb, radius_from_area
 from skeleplex.graph.skeleton_graph import SkeletonGraph
+from skeleplex.graph.constants import (
+    DIAMETER_KEY,
+    TISSUE_THICKNESS_KEY,
+)
 
 if TYPE_CHECKING:
     from skeleplex.measurements.lumen_classifier import ResNet3ClassClassifier
@@ -380,7 +384,7 @@ def lumen_touches_background(label_slice):
     lumen_mask = label_slice == lumen_label
     background_mask = label_slice == background_label
     # Dilate lumen mask to ensure touching
-    dilated_lumen = binary_dilation(lumen_mask, footprint=disk(1))
+    dilated_lumen = dilation(lumen_mask, footprint=disk(1))
     touching = np.any(dilated_lumen & background_mask)
     return touching
 
@@ -670,10 +674,10 @@ def add_measurements_from_h5_to_graph(graph_path, input_path):
         major_axis_sd,
     ) in results:
         edge = (start_node, end_node)
-        measurement_dicts["lumen_diameter"][edge] = lumen_diameter_mean
-        measurement_dicts["lumen_diameter_sd"][edge] = lumen_diameter_sd
-        measurement_dicts["tissue_thickness"][edge] = tissue_thickness_mean
-        measurement_dicts["tissue_thickness_sd"][edge] = tissue_thickness_sd
+        measurement_dicts[DIAMETER_KEY][edge] = lumen_diameter_mean
+        measurement_dicts[f"{DIAMETER_KEY}_sd"][edge] = lumen_diameter_sd
+        measurement_dicts[TISSUE_THICKNESS_KEY][edge] = tissue_thickness_mean
+        measurement_dicts[f"{TISSUE_THICKNESS_KEY}_sd"][edge] = tissue_thickness_sd
         measurement_dicts["total_area"][edge] = total_area_mean
         measurement_dicts["total_area_sd"][edge] = total_area_sd
         measurement_dicts["minor_axis"][edge] = minor_axis_mean

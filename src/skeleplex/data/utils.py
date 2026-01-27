@@ -23,7 +23,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
 from skimage.measure import marching_cubes
-from skimage.morphology import ball, binary_dilation
+from skimage.morphology import ball, dilation
 
 from skeleplex.graph.constants import (
     EDGE_COORDINATES_KEY,
@@ -235,7 +235,7 @@ def draw_line_segment(
         Default value is 1.
     """
     branch_length = np.linalg.norm(end_point - start_point)
-    n_skeleton_points = int(2 * branch_length)
+    n_skeleton_points = int(4 * branch_length)
     skeleton_points = np.linspace(start_point, end_point, n_skeleton_points)
 
     # filter for points within the image
@@ -573,7 +573,7 @@ def make_skeleton_blur_image(
         and the background is normalized to 0.
     """
     # make a blurred skeleton
-    dilated_skeleton = binary_dilation(skeleton_image, ball(dilation_size))
+    dilated_skeleton = dilation(skeleton_image, ball(dilation_size))
     skeleton_blur = gaussian(dilated_skeleton, gaussian_size)
 
     # normalize the values

@@ -1,5 +1,6 @@
 import dask.array as da  # noqa: D100
 import numpy as np
+import skimage as ski
 
 from skeleplex.data.utils import (
     add_noise_to_image_surface,
@@ -26,11 +27,11 @@ def generate_y_junction(
     radius_d2: int,
     d1_angle: float,
     d2_angle: float,
-    wiggle_factor: float = 0.022,
+    wiggle_factor: float = None,
     noise_magnitude: float = 5,
     ellipse_ratio: float | None = None,
     dilation_size: int = 4,
-    use_gpu: bool = True,
+    use_gpu: bool = False,
     seed: int = 42,
 ):
     """Generate a Y-junction structure in a 3D skeleton image.
@@ -81,7 +82,7 @@ def generate_y_junction(
     seed_gen = np.random.default_rng(seed)
     # Initialize the transformation matrices for the angles
     theta = np.radians(d1_angle)
-    iota = np.radians(d2_angle)
+    iota = np.radians(-d2_angle)
     M = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
     N = np.array([[np.cos(iota), -np.sin(iota)], [np.sin(iota), np.cos(iota)]])
     max_radius = max(radius_parent, radius_d1, radius_d2)
@@ -153,55 +154,101 @@ def generate_y_junction(
             draw_elliptic_cylinder_segment(
                 branch, line[0], line[1], rx=radius, ry=radius / ellipse_ratio
             )
-
-    # dilute the tips
-    if not ellipse_ratio:
-        for i, point in enumerate([origin, d1, d2]):
-            r_tip = [radius_parent, radius_d1, radius_d2][i]
-            draw_ellipsoid_at_point(
-                branch,
-                point,
-                radii=(
-                    r_tip * seed_gen.uniform(1.01, 1.3),
-                    r_tip * seed_gen.uniform(1.01, 1.3),
-                    r_tip * seed_gen.uniform(1.01, 1.3),
-                ),
-            )
+    # skeleton = ski.morphology.skeletonize(tubular_skeleton)
+    # dilute the nodes
+    # if not ellipse_ratio:
+    for i, point in enumerate([origin, p1, d1, d2]):
+        r_tip = [radius_parent, radius_parent, radius_d1, radius_d2][i]
+        draw_ellipsoid_at_point(
+            branch,
+            point,
+            radii=(
+                r_tip * seed_gen.uniform(1.01, 1.2),
+                r_tip * seed_gen.uniform(1.01, 1.2),
+                r_tip * seed_gen.uniform(1.01, 1.2),
+            ),
+        )
 
     branch_noisey = add_noise_to_image_surface(branch, noise_magnitude=noise_magnitude)
 
     # crop to content
     branch_noisey, skeleton = crop_to_content(branch_noisey, skeleton)
 
+    #check size, if smaller than 96 in any dimension, pad
+    pad_tuple = []
+    for i in range(3):
+        if branch_noisey.shape[i] < 96:
+            pad_width = (96 - branch_noisey.shape[i]) // 2 + 1
+            pad_tuple.append(pad_width)
+        else:
+            pad_tuple.append(0)
+
+    if pad_tuple:
+        pad_widths = [(pad , pad) for pad in pad_tuple]
+        branch_noisey = np.pad(
+            branch_noisey,
+            pad_width=pad_widths,
+            mode="constant",
+            constant_values=0,
+        )
+        skeleton = np.pad(
+            skeleton,
+            pad_width=pad_widths,
+            mode="constant",
+            constant_values=0,
+        )
+
+    tubular_skeleton = ski.morphology.dilation(skeleton,
+                                               footprint = ski.morphology.ball(2))
     branch_noisey_dask = da.from_array(branch_noisey, chunks=(100, 100, 100))
     depth = np.min([*list(branch_noisey_dask.shape), 30])
     if use_gpu:
         distance_field = da.map_overlap(
             local_normalized_distance_gpu,
             branch_noisey_dask,
-            max_ball_radius=30,
+            max_ball_radius=max_radius *2,
             depth=depth,
         ).compute()
+        distance_field_raw = None
+
+
     else:
-        distance_field = da.map_overlap(
+        distance_fields = da.map_overlap(
             local_normalized_distance,
             branch_noisey_dask,
-            max_ball_radius=30,
+            max_ball_radius=max_radius *2,
             depth=depth,
+            return_distance = True,
         ).compute()
+        distance_field_raw = distance_fields[0]
+        distance_field = distance_fields[1]
 
-    distance_field[distance_field == 1] = 0  # remove hot pixels
+
+
+    # distance_field[distance_field == 1] = 0  # remove hot pixels
+
+    distance_field_squared = distance_field ** 2
 
     skeletonization_blur = make_skeleton_blur_image(
         skeleton,
         dilation_size=dilation_size,
         gaussian_size=1.5,
     )
-    skeletonization_target = skeletonization_blur > 0.7
-    skeletonization_target = skeletonization_target.astype(int)
-    skeletonization_target += branch_noisey
+    regression_target = skeletonization_blur
+    # skeletonization_target = skeletonization_blur > 0.7
+    # skeletonization_target = skeletonization_target.astype(int)
+    # skeletonization_target += branch_noisey
+    segmentation = branch_noisey != 0
 
-    return skeletonization_target, distance_field
+
+    return (segmentation,
+            distance_field_raw,
+            distance_field,
+            distance_field_squared,
+            tubular_skeleton,
+            skeleton,
+            regression_target
+            )
 
 
 def random_parameters_y_junctions(
@@ -213,7 +260,7 @@ def random_parameters_y_junctions(
     radius_d2_range: tuple[int, int] = (30, 55),
     d1_angle_range: tuple[int, int] = (-90, 30),
     d2_angle_range: tuple[int, int] = (20, 100),
-    wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
+    # wiggle_factor_range: tuple[float, float] = (0.01, 0.03),
     noise_magnitude_range: tuple[float, float] = (8, 25),
     ellipse_ratio_range: tuple[float, float] = (1.1, 1.5),
     dilation_size: int = 4,
@@ -230,7 +277,8 @@ def random_parameters_y_junctions(
     radius_d2 = seed_gen.integers(*radius_d2_range)
     d1_angle = seed_gen.uniform(*d1_angle_range)
     d2_angle = seed_gen.uniform(*d2_angle_range)
-    wiggle_factor = seed_gen.uniform(*wiggle_factor_range)
+    wiggle_factor = 0
+    # wiggle_factor = seed_gen.uniform(*wiggle_factor_range)
     noise_magnitude = seed_gen.uniform(*noise_magnitude_range)
     # make half of them elliptic
     ellipse_ratio = (
