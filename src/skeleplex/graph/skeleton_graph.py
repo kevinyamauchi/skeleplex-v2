@@ -130,9 +130,9 @@ def make_graph_directed(graph: nx.Graph, origin: int) -> nx.DiGraph:
         fragments = None
 
     di_graph = nx.DiGraph()
-    for u, v in nx.bfs_edges(di_graph, origin):
+    for u, v in nx.bfs_edges(graph, origin):
         di_graph.add_edge(u, v, **graph[u][v])
-    if fragments:
+    else:
         # choose a node with the highest degree as the origin node
         # Do this for each fragment
         for fragment in nx.connected_components(fragments):
