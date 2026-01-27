@@ -208,6 +208,7 @@ def generate_y_junction(
             branch_noisey_dask,
             max_ball_radius=max_radius *2,
             depth=depth,
+            dtype = np.float32,
         ).compute()
         distance_field_raw = None
 
@@ -219,6 +220,7 @@ def generate_y_junction(
             max_ball_radius=max_radius *2,
             depth=depth,
             return_distance = True,
+            dtype = np.float32,
         ).compute()
         distance_field_raw = distance_fields[0]
         distance_field = distance_fields[1]
