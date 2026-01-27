@@ -49,7 +49,8 @@ def test_skeleton_graph_json_round_trip(simple_t_skeleton_graph, tmp_path):
     assert simple_t_skeleton_graph.origin == new_skeleton_graph.origin
 
 
-def test_skeleton_graph_to_directed(simple_t_skeleton_graph):
+def test_skeleton_graph_to_directed(simple_t_skeleton_graph,
+                                    generate_toy_skeleton_graph_symmetric_branch_angle):
     """Test converting a SkeletonGraph to a directed graph."""
     directed_graph = simple_t_skeleton_graph.to_directed(origin=0)
     assert directed_graph.is_directed()
@@ -65,7 +66,18 @@ def test_skeleton_graph_to_directed(simple_t_skeleton_graph):
         assert all(
             edges in directed_graph.out_edges(u) for edges in directed_graph.in_edges(v)
         )
+    fragmented_graph_obj = generate_toy_skeleton_graph_symmetric_branch_angle
+    fragmented_test_graph = fragmented_graph_obj.graph
+    fragmented_test_graph.remove_edge(0,2)
+    fragmented_test_graph_undirected  = nx.Graph(fragmented_test_graph).copy()
+    assert not fragmented_test_graph_undirected.is_directed()
+    assert not nx.is_connected(fragmented_test_graph_undirected)
 
+    fragmented_graph_obj.graph = fragmented_test_graph_undirected
+    fragmented_graph_obj.graph = fragmented_graph_obj.to_directed(origin = -1)
+    assert fragmented_graph_obj.graph.is_directed()
+    assert set(fragmented_graph_obj.graph.nodes) == set(
+        fragmented_test_graph_undirected.nodes)
 
 def test_get_next_node_id():
     """Test the get_next_node_id function."""
