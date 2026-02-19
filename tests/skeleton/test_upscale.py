@@ -2,8 +2,10 @@
 
 import numpy as np
 import pytest
+from skimage.graph import pixel_graph
 
 from skeleplex.skeleton import upscale_skeleton
+from skeleplex.skeleton._upscale import collapse_false_junctions
 
 
 @pytest.mark.parametrize("skeleton_dtype", [np.bool_, np.uint8, np.int32])
@@ -102,3 +104,100 @@ def test_upscale_skeleton_raises_error_for_non_3d_input():
 
     with pytest.raises(ValueError, match="must be 3D"):
         upscale_skeleton(skeleton_2d, (2, 2, 2))
+
+
+def _make_corner_skeleton():
+    """Build a small 90-degree corner skeleton in a 10^3 volume.
+
+    The skeleton occupies z=5 and is laid out in the y-x plane as follows.
+    Node local indices (assigned by pixel_graph) are shown in brackets,
+    and the node that should be removed is marked with [X]:
+
+        x:  4    5    6
+      y:
+       2:       [0]             deg=1  tip
+       3:       [1]             deg=2
+       4:       [2]             deg=3
+       5:       [3]  [X]        deg=4 / deg=3 (corner row)
+       6:  [5]       [6]        deg=1 / deg=2
+       7:            [7]        deg=1  tip
+
+    Under 26-connectivity, node [X] at (z=5, y=5, x=6) is a pure
+    diagonal shortcut: all of its neighbours ([2], [3], [6]) are already
+    connected to each other without passing through it, so it is removed.
+    After cleaning, [3] at (5, 5, 5) is the sole true degree-3
+    bifurcation connecting the stem to both branches.
+
+    Returns
+    -------
+    graph : csr_matrix
+        The pixel graph of the skeleton (before cleaning).
+    nodes : np.ndarray
+        Raveled pixel indices for each graph node.
+    shape : tuple of int
+        Shape of the skeleton image (10, 10, 10).
+    """
+    skeleton = np.zeros((10, 10, 10), dtype=np.uint8)
+    skeleton[5, 2:5, 5] = 1  # stem
+    skeleton[5, 5, 5:7] = 1  # corner row: (5,5,5) and (5,5,6)
+    skeleton[5, 6, 4] = 1  # left branch tip
+    skeleton[5, 6, 6] = 1  # right branch tip
+    skeleton[5, 7, 6] = 1  # right branch continues
+
+    graph, nodes = pixel_graph(skeleton.astype(bool), connectivity=3)
+    return graph, nodes, skeleton.shape
+
+
+def test_collapse_false_junctions_corner():
+    """Collapsing a 90-degree corner removes exactly the shortcut node.
+
+    The cleaned graph is converted to a dense array and compared exactly
+    against the expected adjacency matrix. Node [4] at (5,5,6) should be
+    zeroed out; all other edges are preserved with their original weights.
+    """
+    graph, nodes, shape = _make_corner_skeleton()
+
+    cleaned = collapse_false_junctions(graph)
+
+    expected = np.array(
+        [
+            # [0]  [1]  [2]  [3]  [4]  [5]  [6]  [7]
+            [0, 1, 0, 0, 0, 0, 0, 0],  # [0]
+            [1, 0, 1, 0, 0, 0, 0, 0],  # [1]
+            [0, 1, 0, 1, 0, 0, 0, 0],  # [2]
+            [0, 0, 1, 0, 0, 1, 1, 0],  # [3]
+            [0, 0, 0, 0, 0, 0, 0, 0],  # [4] removed
+            [0, 0, 0, 1, 0, 0, 0, 0],  # [5]
+            [0, 0, 0, 1, 0, 0, 0, 1],  # [6]
+            [0, 0, 0, 0, 0, 0, 1, 0],  # [7]
+        ],
+        dtype=bool,
+    )
+
+    np.testing.assert_array_equal(cleaned.toarray().astype(bool), expected)
+
+
+def test_collapse_false_junctions_no_false_junctions():
+    """A clean Y-shaped skeleton with no corners is left unchanged.
+
+    The skeleton layout (z=5, y-x plane):
+
+        x:  4    5    6
+      y:
+       2:       [0]             deg=1  tip
+       3:       [1]             deg=2
+       4:       [2]             deg=2
+       5:       [3]             deg=3  true bifurcation
+       6:  [4]       [5]        deg=1  branch tips
+
+    No triangles exist, so collapse_false_junctions is a no-op.
+    """
+    skeleton = np.zeros((10, 10, 10), dtype=np.uint8)
+    skeleton[5, 2:6, 5] = 1  # stem
+    skeleton[5, 6, 4] = 1  # left branch tip
+    skeleton[5, 6, 6] = 1  # right branch tip
+
+    graph, nodes = pixel_graph(skeleton.astype(bool), connectivity=3)
+    cleaned = collapse_false_junctions(graph)
+
+    np.testing.assert_array_equal(cleaned.toarray(), graph.toarray())
