@@ -18,14 +18,18 @@ def repair_breaks_chunk(
     expanded_slice: tuple[slice, slice, slice],
     actual_border: tuple[int, int, int],
     repair_radius: float,
+    label_map_zarr: zarr.Array | None = None,
+    n_fit_voxels: int = 10,
+    w_distance: float = 1.0,
+    w_angle: float = 1.0,
     backend: Literal["cpu", "cupy"] = "cpu",
 ) -> None:
     """Process a single chunk for skeleton break repair.
 
-    Loads a chunk with boundary region, applies break repair only to endpoints
-    in the core region, and writes the full result back to output. This allows
-    repairs to extend into the boundary region while preventing duplicate
-    processing of endpoints.
+    Loads a chunk with boundary region, applies break repair only to
+    endpoints in the core region, and writes the full result back to
+    output. This allows repairs to extend into the boundary region
+    while preventing duplicate processing of endpoints.
 
     Parameters
     ----------
@@ -38,10 +42,23 @@ def repair_breaks_chunk(
     expanded_slice : tuple[slice, slice, slice]
         Slice defining the chunk+boundary region to load from input.
     actual_border : tuple[int, int, int]
-        The actual border size used (z, y, x). May be smaller than requested
-        at volume edges.
+        The actual border size used (z, y, x). May be smaller than
+        requested at volume edges.
     repair_radius : float
         The maximum Euclidean distance for connecting endpoints.
+    label_map_zarr : zarr.Array or None, optional
+        Pre-computed global connected component label map stored as a
+        zarr array. When provided, the corresponding chunk is loaded
+        and forwarded to ``repair_breaks`` to prevent false positives
+        at chunk boundaries. Default is None.
+    n_fit_voxels : int, optional
+        Number of voxels to walk along the skeleton from each
+        endpoint when estimating the local tangent direction.
+        Default is 10.
+    w_distance : float, optional
+        Weight for the normalised distance term. Default is 1.0.
+    w_angle : float, optional
+        Weight for the normalised angle term. Default is 1.0.
     backend : Literal["cpu", "cupy"]
         The computation backend to use.
         Default is "cpu".
@@ -54,6 +71,11 @@ def repair_breaks_chunk(
     # Load chunk+boundary data
     skeleton_chunk = np.array(skeleton[expanded_slice])
     segmentation_chunk = np.array(segmentation[expanded_slice])
+
+    # Load label map chunk if provided
+    label_map_chunk = None
+    if label_map_zarr is not None:
+        label_map_chunk = np.array(label_map_zarr[expanded_slice])
 
     # Calculate endpoint bounding box within the loaded chunk
     # This restricts endpoint search to the core region
@@ -73,6 +95,10 @@ def repair_breaks_chunk(
         segmentation=segmentation_chunk,
         repair_radius=repair_radius,
         endpoint_bounding_box=endpoint_bbox,
+        label_map=label_map_chunk,
+        n_fit_voxels=n_fit_voxels,
+        w_distance=w_distance,
+        w_angle=w_angle,
         backend=backend,
     )
 
@@ -87,14 +113,19 @@ def repair_breaks_lazy(
     output_path: str | Path,
     repair_radius: float = 10.0,
     chunk_shape: tuple[int, int, int] = (256, 256, 256),
+    label_map_path: str | Path | None = None,
+    n_fit_voxels: int = 10,
+    w_distance: float = 1.0,
+    w_angle: float = 1.0,
     backend: Literal["cpu", "cupy"] = "cpu",
 ) -> None:
     """Repair breaks in a skeleton using lazy chunk-based processing.
 
-    Processes a skeleton image that is too large to fit in memory by dividing
-    it into chunks with overlapping boundaries. Each chunk is processed serially
-    to avoid write conflicts. Endpoints are only searched in the core region of
-    each chunk, while repairs can extend into the boundary regions.
+    Processes a skeleton image that is too large to fit in memory by
+    dividing it into chunks with overlapping boundaries. Each chunk is
+    processed serially to avoid write conflicts. Endpoints are only
+    searched in the core region of each chunk, while repairs can extend
+    into the boundary regions.
 
     Parameters
     ----------
@@ -104,56 +135,62 @@ def repair_breaks_lazy(
         Path to the zarr array containing the segmentation mask.
     output_path : str or Path
         Path where the output zarr array will be created.
-    repair_radius : float, default=10.0
-        The maximum Euclidean distance for connecting endpoints.
-        Also used as the boundary size around each chunk.
-        The boundary is set to ceil(repair_radius) + 2 voxels.
-    chunk_shape : tuple[int, int, int]
+    repair_radius : float, optional
+        The maximum Euclidean distance for connecting endpoints. Also
+        used as the boundary size around each chunk. The boundary is
+        set to ``ceil(repair_radius) + 2`` voxels. Default is 10.0.
+    chunk_shape : tuple[int, int, int], optional
         The shape of each core chunk to process (z, y, x).
         Independent of the zarr storage chunk size.
         Default is (256, 256, 256).
-    backend : Literal["cpu", "cupy"]
-        The computation backend to use.
-        Default is "cpu".
-
-    Returns
-    -------
-    None
-        Creates a new zarr array at output_path with the repaired skeleton.
+    label_map_path : str, Path, or None, optional
+        Path to a zarr array containing a globally pre-computed
+        connected component label map for the skeleton (e.g.
+        produced by ``label_chunks_parallel``). When provided,
+        chunk-local connected component labelling is skipped,
+        preventing false positive repairs at chunk boundaries.
+        Must have the same shape as the skeleton. Default is None.
+    n_fit_voxels : int, optional
+        Number of voxels to walk along the skeleton from each
+        endpoint when estimating the local tangent direction.
+        Default is 10.
+    w_distance : float, optional
+        Weight for the normalised distance term in the repair cost
+        function. Default is 1.0.
+    w_angle : float, optional
+        Weight for the normalised angle deviation term in the repair
+        cost function. Default is 1.0.
+    backend : Literal["cpu", "cupy"], optional
+        The backend to use for calculation. Default is "cpu".
 
     Raises
     ------
     ValueError
-        If input and segmentation shapes don't match.
+        If the skeleton and segmentation shapes do not match.
     ValueError
-        If repair_radius is not positive.
-    ValueError
-        If chunk_shape doesn't have exactly 3 elements.
+        If ``label_map_path`` is provided but points to an array
+        whose shape does not match the skeleton.
     """
-    # Validate inputs
-    if repair_radius <= 0:
-        raise ValueError(f"repair_radius must be positive, got {repair_radius}")
-
-    if len(chunk_shape) != 3:
-        raise ValueError(
-            f"chunk_shape must be a 3-tuple, got length {len(chunk_shape)}"
-        )
-
-    # Convert paths to Path objects
-    skeleton_path = Path(skeleton_path)
-    segmentation_path = Path(segmentation_path)
-    output_path = Path(output_path)
-
-    # Open input arrays
+    # Open zarr arrays
     input_zarr = zarr.open(str(skeleton_path), mode="r")
     segmentation_zarr = zarr.open(str(segmentation_path), mode="r")
 
-    # Validate shapes match
+    # Validate shapes
     if input_zarr.shape != segmentation_zarr.shape:
         raise ValueError(
             f"Input and segmentation shapes must match. "
             f"Got {input_zarr.shape} and {segmentation_zarr.shape}"
         )
+
+    # Open optional label map
+    label_map_zarr = None
+    if label_map_path is not None:
+        label_map_zarr = zarr.open(str(label_map_path), mode="r")
+        if label_map_zarr.shape != input_zarr.shape:
+            raise ValueError(
+                f"label_map shape {label_map_zarr.shape} does not "
+                f"match skeleton shape {input_zarr.shape}"
+            )
 
     # Get metadata
     input_shape = input_zarr.shape
@@ -199,9 +236,18 @@ def repair_breaks_lazy(
                         k * chunk_shape[2],
                     )
                     core_end = (
-                        min((i + 1) * chunk_shape[0], input_shape[0]),
-                        min((j + 1) * chunk_shape[1], input_shape[1]),
-                        min((k + 1) * chunk_shape[2], input_shape[2]),
+                        min(
+                            (i + 1) * chunk_shape[0],
+                            input_shape[0],
+                        ),
+                        min(
+                            (j + 1) * chunk_shape[1],
+                            input_shape[1],
+                        ),
+                        min(
+                            (k + 1) * chunk_shape[2],
+                            input_shape[2],
+                        ),
                     )
                     core_slice = tuple(
                         slice(core_start[dim], core_end[dim]) for dim in range(3)
@@ -220,5 +266,9 @@ def repair_breaks_lazy(
                         expanded_slice=expanded_slice,
                         actual_border=actual_border,
                         repair_radius=repair_radius,
+                        label_map_zarr=label_map_zarr,
+                        n_fit_voxels=n_fit_voxels,
+                        w_distance=w_distance,
+                        w_angle=w_angle,
                         backend=backend,
                     )
