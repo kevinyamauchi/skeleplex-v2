@@ -3,12 +3,14 @@ from importlib.util import find_spec
 import numpy as np
 import pytest
 from numba.typed import List
+from scipy.ndimage import convolve
 
 from skeleplex.skeleton import find_break_repairs, repair_breaks
 from skeleplex.skeleton._break_detection import (
     _flatten_candidates,
     _line_3d_numba,
     draw_lines,
+    get_endpoint_directions,
     get_skeleton_data_cpu,
 )
 
@@ -1009,3 +1011,337 @@ def test_repair_breaks_tee():
     expected[17, 4:8, 12] = True  # Horizontal crossbar
 
     np.testing.assert_array_equal(repaired, expected)
+
+
+def test_get_skeleton_data_cpu_uses_provided_label_map():
+    """When label_map is provided, it is returned instead of local labelling."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2:6, 2, 2] = True
+    skeleton[5:8, 5, 5] = True
+
+    # Custom label map where both lines share a label
+    custom_label_map = np.zeros((10, 10, 10), dtype=np.int32)
+    custom_label_map[2:6, 2, 2] = 42
+    custom_label_map[5:8, 5, 5] = 42
+
+    _, _, _, returned_label_map = get_skeleton_data_cpu(
+        skeleton, label_map=custom_label_map
+    )
+
+    np.testing.assert_array_equal(returned_label_map, custom_label_map)
+
+
+def test_get_skeleton_data_cpu_label_map_shape_mismatch():
+    """ValueError is raised when label_map shape differs from skeleton."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2:6, 2, 2] = True
+
+    wrong_shape_map = np.zeros((5, 5, 5), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="label_map shape"):
+        get_skeleton_data_cpu(skeleton, label_map=wrong_shape_map)
+
+
+def test_get_skeleton_data_cpu_none_label_map_computes_locally():
+    """When label_map is None, local connected component labelling is used."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2:6, 2, 2] = True  # Line 1
+    skeleton[7:9, 7, 7] = True  # Line 2
+
+    _, _, _, label_map = get_skeleton_data_cpu(skeleton, label_map=None)
+
+    # Two disconnected lines should get different labels
+    label_1 = label_map[2, 2, 2]
+    label_2 = label_map[7, 7, 7]
+    assert label_1 > 0
+    assert label_2 > 0
+    assert label_1 != label_2
+
+
+def test_repair_breaks_global_label_map_prevents_false_repair():
+    """Global label map prevents spurious repairs between same-component voxels.
+
+    Two skeleton segments appear locally disconnected, but the global
+    label map marks them as the same connected component (connected
+    through a path outside this region). No repair should be drawn.
+    """
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[7:16, 12, 12] = True  # Segment A
+    skeleton[20:24, 12, 12] = True  # Segment B
+
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[5:25, 10:14, 10:14] = True
+
+    # Both segments belong to the SAME global component
+    global_label_map = np.zeros((30, 30, 30), dtype=np.int32)
+    global_label_map[7:16, 12, 12] = 1
+    global_label_map[20:24, 12, 12] = 1
+
+    repaired = repair_breaks(
+        skeleton,
+        segmentation,
+        repair_radius=10.0,
+        label_map=global_label_map,
+    )
+
+    # Skeleton should be unchanged
+    np.testing.assert_array_equal(repaired, skeleton)
+
+
+def test_repair_breaks_without_global_label_map_makes_repair():
+    """Without global label map, local labelling sees two components.
+
+    Counterpart to test_repair_breaks_global_label_map_prevents_false_repair.
+    Local labelling assigns different labels, so a repair is drawn.
+    """
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[7:16, 12, 12] = True
+    skeleton[20:24, 12, 12] = True
+
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[5:25, 10:14, 10:14] = True
+
+    repaired = repair_breaks(
+        skeleton,
+        segmentation,
+        repair_radius=10.0,
+        label_map=None,
+    )
+
+    expected = np.zeros((30, 30, 30), dtype=bool)
+    expected[7:24, 12, 12] = True
+    np.testing.assert_array_equal(repaired, expected)
+
+
+def _build_degree_map(skeleton):
+    """Compute the degree map from a binary skeleton."""
+    kernel = np.ones((3, 3, 3), dtype=np.uint8)
+    kernel[1, 1, 1] = 0
+    degree_map = convolve(skeleton.astype(np.uint8), kernel, mode="constant", cval=0)
+    return (degree_map * skeleton).astype(np.uint8)
+
+
+@pytest.mark.parametrize(
+    "skeleton_slices, endpoint, expected_axis_index",
+    [
+        pytest.param(np.s_[3:14, 10, 10], [3, 10, 10], 0, id="z-axis"),
+        pytest.param(np.s_[10, 3:14, 10], [10, 3, 10], 1, id="y-axis"),
+        pytest.param(np.s_[10, 10, 3:14], [10, 10, 3], 2, id="x-axis"),
+    ],
+)
+def test_get_endpoint_directions_axis_aligned(
+    skeleton_slices, endpoint, expected_axis_index
+):
+    """Direction for a straight axis-aligned line is parallel to that axis."""
+    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    skeleton[skeleton_slices] = True
+    degree_map = _build_degree_map(skeleton)
+
+    endpoints = np.array([endpoint])
+    directions = get_endpoint_directions(
+        skeleton, endpoints, degree_map, n_fit_voxels=10
+    )
+
+    d = directions[0]
+    norm = np.linalg.norm(d)
+    assert norm > 0.99, f"Should be unit vector, got norm={norm}"
+    assert (
+        abs(abs(d[expected_axis_index]) - 1.0) < 0.01
+    ), f"Expected direction along axis {expected_axis_index}, got {d}"
+
+
+def test_get_endpoint_directions_single_voxel():
+    """A single-voxel skeleton returns the zero vector (degenerate)."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[5, 5, 5] = True
+
+    degree_map = np.zeros((10, 10, 10), dtype=np.uint8)
+    endpoints = np.array([[5, 5, 5]])
+
+    directions = get_endpoint_directions(
+        skeleton, endpoints, degree_map, n_fit_voxels=10
+    )
+
+    np.testing.assert_array_equal(directions[0], [0.0, 0.0, 0.0])
+
+
+def test_get_endpoint_directions_two_voxel_segment():
+    """A two-voxel segment produces a valid unit direction vector."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[5, 5, 5] = True
+    skeleton[6, 5, 5] = True
+
+    degree_map = np.zeros((10, 10, 10), dtype=np.uint8)
+    degree_map[5, 5, 5] = 1
+    degree_map[6, 5, 5] = 1
+
+    endpoints = np.array([[5, 5, 5]])
+    directions = get_endpoint_directions(
+        skeleton, endpoints, degree_map, n_fit_voxels=10
+    )
+
+    d = directions[0]
+    assert np.linalg.norm(d) > 0.99, "Should return a unit vector"
+    assert abs(abs(d[0]) - 1.0) < 0.01, f"Direction should be along z, got {d}"
+
+
+def test_get_endpoint_directions_diagonal_line():
+    """Direction for a diagonal line is along the (1,1,1) diagonal."""
+    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    for i in range(10):
+        skeleton[3 + i, 3 + i, 3 + i] = True
+
+    degree_map = np.zeros((20, 20, 20), dtype=np.uint8)
+    degree_map[3, 3, 3] = 1
+    for i in range(1, 9):
+        degree_map[3 + i, 3 + i, 3 + i] = 2
+    degree_map[12, 12, 12] = 1
+
+    endpoints = np.array([[3, 3, 3]])
+    directions = get_endpoint_directions(
+        skeleton, endpoints, degree_map, n_fit_voxels=10
+    )
+
+    d = directions[0]
+    expected_dir = np.array([1.0, 1.0, 1.0])
+    expected_dir /= np.linalg.norm(expected_dir)
+
+    cosine = abs(np.dot(d, expected_dir))
+    assert cosine > 0.99, f"Expected direction along (1,1,1), got {d}"
+
+
+def _setup_two_candidate_scenario():
+    """Common setup for angle cost tests.
+
+    One endpoint at (10,10,10) with two candidates in different
+    components:
+    - Candidate A at (10,13,10): 3 voxels away, perpendicular to z
+    - Candidate B at (14,10,10): 4 voxels away, aligned with z
+
+    Endpoint direction is along the z-axis.
+    """
+    endpoint = np.array([[10, 10, 10]])
+    candidates = [
+        np.array(
+            [
+                [10, 13, 10],  # A: perpendicular, closer
+                [14, 10, 10],  # B: aligned, farther
+            ]
+        ),
+    ]
+
+    label_map = np.zeros((20, 20, 20), dtype=np.int32)
+    label_map[10, 10, 10] = 1
+    label_map[10, 13, 10] = 2
+    label_map[14, 10, 10] = 3
+
+    segmentation = np.ones((20, 20, 20), dtype=bool)
+    z_direction = np.array([[1.0, 0.0, 0.0]])
+
+    return endpoint, candidates, label_map, segmentation, z_direction
+
+
+def test_find_break_repairs_angle_cost_selects_aligned():
+    """With high w_angle, the aligned (farther) candidate is preferred."""
+    endpoint, candidates, label_map, seg, direction = _setup_two_candidate_scenario()
+
+    _, repair_end = find_break_repairs(
+        end_point_coordinates=endpoint,
+        repair_candidates=candidates,
+        label_map=label_map,
+        segmentation=seg,
+        endpoint_directions=direction,
+        w_distance=0.1,
+        w_angle=10.0,
+    )
+
+    # Candidate B (aligned along z)
+    np.testing.assert_array_equal(repair_end[0], [14, 10, 10])
+
+
+def test_find_break_repairs_distance_only_selects_closer():
+    """With w_angle=0, the closer candidate is always selected."""
+    endpoint, candidates, label_map, seg, direction = _setup_two_candidate_scenario()
+
+    _, repair_end = find_break_repairs(
+        end_point_coordinates=endpoint,
+        repair_candidates=candidates,
+        label_map=label_map,
+        segmentation=seg,
+        endpoint_directions=direction,
+        w_distance=1.0,
+        w_angle=0.0,
+    )
+
+    # Candidate A (closer)
+    np.testing.assert_array_equal(repair_end[0], [10, 13, 10])
+
+
+def test_find_break_repairs_degenerate_direction_falls_back():
+    """Zero direction vector disables angle term; closer candidate wins."""
+    endpoint, candidates, label_map, seg, _ = _setup_two_candidate_scenario()
+
+    _, repair_end = find_break_repairs(
+        end_point_coordinates=endpoint,
+        repair_candidates=candidates,
+        label_map=label_map,
+        segmentation=seg,
+        endpoint_directions=np.array([[0.0, 0.0, 0.0]]),
+        w_distance=1.0,
+        w_angle=10.0,
+    )
+
+    # Falls back to distance-only → candidate A
+    np.testing.assert_array_equal(repair_end[0], [10, 13, 10])
+
+
+def test_find_break_repairs_none_directions_uses_distance():
+    """When endpoint_directions is None, distance-only selection is used."""
+    endpoint, candidates, label_map, seg, _ = _setup_two_candidate_scenario()
+
+    _, repair_end = find_break_repairs(
+        end_point_coordinates=endpoint,
+        repair_candidates=candidates,
+        label_map=label_map,
+        segmentation=seg,
+        endpoint_directions=None,
+    )
+
+    np.testing.assert_array_equal(repair_end[0], [10, 13, 10])
+
+
+def test_repair_breaks_angle_weights_propagated():
+    """Integration test: angle weights steer repair toward aligned target.
+
+    A z-axis skeleton line with two disconnected targets:
+    - Perpendicular target (along y), closer
+    - Aligned target (along z), farther
+
+    With high w_angle, the aligned candidate is selected.
+    """
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[5:13, 12, 12] = True  # main line along z
+    skeleton[12, 16, 12] = True  # perpendicular target (closer)
+    skeleton[17, 12, 12] = True  # aligned target (farther)
+
+    segmentation = np.ones((30, 30, 30), dtype=bool)
+
+    # All three in different components
+    label_map = np.zeros((30, 30, 30), dtype=np.int32)
+    label_map[5:13, 12, 12] = 1
+    label_map[12, 16, 12] = 2
+    label_map[17, 12, 12] = 3
+
+    repaired = repair_breaks(
+        skeleton,
+        segmentation,
+        repair_radius=10.0,
+        label_map=label_map,
+        w_distance=0.1,
+        w_angle=10.0,
+    )
+
+    # The z-aligned target should be connected
+    assert repaired[17, 12, 12], "Aligned candidate should be connected"
+    for z in range(13, 17):
+        assert repaired[z, 12, 12], f"Repair line should include voxel at z={z}"
