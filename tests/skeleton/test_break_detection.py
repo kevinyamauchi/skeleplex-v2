@@ -5,11 +5,12 @@ import pytest
 from numba.typed import List
 from scipy.ndimage import convolve
 
-from skeleplex.skeleton import find_break_repairs, repair_breaks
+from skeleplex.skeleton import find_break_repairs, repair_breaks, repair_fusion_breaks
 from skeleplex.skeleton._break_detection import (
     _flatten_candidates,
     _line_3d_numba,
     draw_lines,
+    find_fusion_boundaries,
     get_endpoint_directions,
     get_skeleton_data_cpu,
 )
@@ -1345,3 +1346,437 @@ def test_repair_breaks_angle_weights_propagated():
     assert repaired[17, 12, 12], "Aligned candidate should be connected"
     for z in range(13, 17):
         assert repaired[z, 12, 12], f"Repair line should include voxel at z={z}"
+
+
+def test_find_fusion_boundaries_basic():
+    """Two face-adjacent non-zero regions produce boundary voxels."""
+    scale_map = np.zeros((5, 5, 5), dtype=np.int32)
+    # Region 1 on the left half, region 2 on the right half (split at x=2)
+    scale_map[:, :, :2] = 1
+    scale_map[:, :, 2:] = 2
+
+    boundary = find_fusion_boundaries(scale_map)
+
+    expected_boundary = np.zeros((5, 5, 5), dtype=bool)
+    expected_boundary[:, :, 1:3] = True
+    np.testing.assert_array_equal(boundary, expected_boundary)
+
+
+def test_find_fusion_boundaries_diagonal():
+    """Two regions touching only diagonally are detected as boundaries."""
+    scale_map = np.zeros((5, 5, 5), dtype=np.int32)
+    # Region 1 in one corner voxel, region 2 in the diagonal neighbor
+    scale_map[1, 1, 1] = 1
+    scale_map[2, 2, 2] = 2
+
+    boundary = find_fusion_boundaries(scale_map)
+
+    expected_boundary = np.zeros((5, 5, 5), dtype=bool)
+    expected_boundary[1, 1, 1] = True
+    expected_boundary[2, 2, 2] = True
+    np.testing.assert_array_equal(boundary, expected_boundary)
+
+
+def test_find_fusion_boundaries_negative_labels():
+    """Negative prediction IDs are treated as valid non-zero labels."""
+    scale_map = np.zeros((5, 5, 5), dtype=np.int32)
+    scale_map[2, 2, 1] = -3
+    scale_map[2, 2, 2] = 5
+
+    boundary = find_fusion_boundaries(scale_map)
+
+    expected_boundary = np.zeros((5, 5, 5), dtype=bool)
+    expected_boundary[2, 2, 1] = True
+    expected_boundary[2, 2, 2] = True
+    np.testing.assert_array_equal(boundary, expected_boundary)
+
+
+def test_find_fusion_boundaries_background_ignored():
+    """Voxels adjacent only to background (0) are not on a boundary."""
+    scale_map = np.zeros((5, 5, 5), dtype=np.int32)
+    # Single non-zero region surrounded by zeros
+    scale_map[2, 2, 2] = 1
+
+    boundary = find_fusion_boundaries(scale_map)
+
+    expected_boundary = np.zeros((5, 5, 5), dtype=bool)
+    np.testing.assert_array_equal(boundary, expected_boundary)
+
+
+def test_find_fusion_boundaries_not_3d():
+    """ValueError is raised for non-3D input."""
+    scale_map = np.zeros((5, 5), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="Expected 3D"):
+        find_fusion_boundaries(scale_map)
+
+
+def test_get_skeleton_data_cpu_endpoint_mask():
+    """Endpoint mask filters out endpoints not on the mask."""
+    # Create skeleton with two separate lines
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    # Line 1: along z at y=2, x=2
+    skeleton[2, 2, 2] = True
+    skeleton[3, 2, 2] = True
+    skeleton[4, 2, 2] = True
+    skeleton[5, 2, 2] = True
+    # Line 2: along z at y=7, x=7
+    skeleton[2, 7, 7] = True
+    skeleton[3, 7, 7] = True
+    skeleton[4, 7, 7] = True
+
+    # Mask that only includes the region around line 1
+    endpoint_mask = np.zeros((10, 10, 10), dtype=bool)
+    endpoint_mask[:, :5, :5] = True
+
+    _, endpoints, _, _ = get_skeleton_data_cpu(skeleton, endpoint_mask=endpoint_mask)
+
+    # Only endpoints from line 1 should be returned
+    # Line 1 endpoints: (2,2,2) and (5,2,2)
+    assert endpoints.shape[0] == 2
+    endpoint_set = {tuple(ep) for ep in endpoints}
+    assert (2, 2, 2) in endpoint_set
+    assert (5, 2, 2) in endpoint_set
+
+    # Line 2 endpoints should NOT be included
+    assert (2, 7, 7) not in endpoint_set
+    assert (4, 7, 7) not in endpoint_set
+
+
+def test_get_skeleton_data_cpu_endpoint_mask_none():
+    """When endpoint_mask is None, all endpoints are returned."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2, 2, 2] = True
+    skeleton[3, 2, 2] = True
+    skeleton[4, 2, 2] = True
+
+    _, endpoints_no_mask, _, _ = get_skeleton_data_cpu(skeleton)
+    _, endpoints_none, _, _ = get_skeleton_data_cpu(skeleton, endpoint_mask=None)
+
+    np.testing.assert_array_equal(endpoints_no_mask, endpoints_none)
+
+
+def test_get_skeleton_data_cpu_endpoint_mask_shape_mismatch():
+    """ValueError raised when endpoint_mask shape doesn't match."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2, 2, 2] = True
+    skeleton[3, 2, 2] = True
+    bad_mask = np.zeros((5, 5, 5), dtype=bool)
+
+    with pytest.raises(ValueError, match="endpoint_mask shape"):
+        get_skeleton_data_cpu(skeleton, endpoint_mask=bad_mask)
+
+
+def test_get_skeleton_data_cpu_endpoint_mask_dilation():
+    """Dilation expands the mask to capture nearby endpoints.
+
+    Skeleton: line along z at (y=5, x=5) from z=2 to z=7.
+    Endpoints: (2,5,5) and (7,5,5).
+    Mask: single voxel at (3,5,5) — neither endpoint is on it.
+    With dilation=1 the mask expands by 1 voxel in all directions,
+    reaching (2,5,5) but not (7,5,5).
+    """
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2:8, 5, 5] = True
+
+    mask = np.zeros((10, 10, 10), dtype=bool)
+    mask[3, 5, 5] = True
+
+    # Without dilation: no endpoints captured
+    _, endpoints_no_dil, _, _ = get_skeleton_data_cpu(
+        skeleton, endpoint_mask=mask, endpoint_mask_dilation=0
+    )
+    assert endpoints_no_dil.shape[0] == 0
+
+    # With dilation=1: (2,5,5) is captured, (7,5,5) is not
+    _, endpoints_dil1, _, _ = get_skeleton_data_cpu(
+        skeleton, endpoint_mask=mask, endpoint_mask_dilation=1
+    )
+    assert endpoints_dil1.shape[0] == 1
+    np.testing.assert_array_equal(endpoints_dil1[0], [2, 5, 5])
+
+    # With dilation=5: both endpoints captured
+    _, endpoints_dil5, _, _ = get_skeleton_data_cpu(
+        skeleton, endpoint_mask=mask, endpoint_mask_dilation=5
+    )
+    assert endpoints_dil5.shape[0] == 2
+
+
+def test_get_skeleton_data_cpu_endpoint_mask_dilation_zero_is_noop():
+    """Dilation of 0 produces identical results to no dilation."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2:6, 5, 5] = True
+
+    mask = np.zeros((10, 10, 10), dtype=bool)
+    mask[2, 5, 5] = True
+
+    _, endpoints_default, _, _ = get_skeleton_data_cpu(skeleton, endpoint_mask=mask)
+    _, endpoints_zero, _, _ = get_skeleton_data_cpu(
+        skeleton, endpoint_mask=mask, endpoint_mask_dilation=0
+    )
+
+    np.testing.assert_array_equal(endpoints_default, endpoints_zero)
+
+
+@pytest.mark.skipif(not CUPY_AVAILABLE, reason="cupy not installed")
+def test_get_skeleton_data_cupy_endpoint_mask():
+    """Endpoint mask filters endpoints in the CuPy backend."""
+    from skeleplex.skeleton._break_detection import get_skeleton_data_cupy
+
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    skeleton[2, 2, 2] = True
+    skeleton[3, 2, 2] = True
+    skeleton[4, 2, 2] = True
+    skeleton[5, 2, 2] = True
+    skeleton[2, 7, 7] = True
+    skeleton[3, 7, 7] = True
+    skeleton[4, 7, 7] = True
+
+    endpoint_mask = np.zeros((10, 10, 10), dtype=bool)
+    endpoint_mask[:, :5, :5] = True
+
+    _, endpoints, _, _ = get_skeleton_data_cupy(skeleton, endpoint_mask=endpoint_mask)
+
+    assert endpoints.shape[0] == 2
+    endpoint_set = {tuple(ep) for ep in endpoints}
+    assert (2, 2, 2) in endpoint_set
+    assert (5, 2, 2) in endpoint_set
+    assert (2, 7, 7) not in endpoint_set
+    assert (4, 7, 7) not in endpoint_set
+
+
+def test_repair_fusion_breaks_basic():
+    """Two skeleton fragments with a gap at a prediction boundary.
+
+    Fragment 1 is in tile 1, fragment 2 is in tile 3, with a narrow
+    tile 2 strip spanning the gap. Both endpoints are therefore on
+    fusion boundaries and the repair should connect them.
+
+    Layout along z (y=10, x=10):
+        z:  5 6 7 8 9 | 10 11 | 12 13 14 15 16
+        skel: * * * * * |       | *  *  *  *  *
+        tile: 1 1 1 1 1 |  2  2 | 3  3  3  3  3
+    """
+    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    # Fragment 1: z=5..9 in tile 1
+    skeleton[5:10, 10, 10] = True
+    # Fragment 2: z=12..16 in tile 3 (gap at z=10,11)
+    skeleton[12:17, 10, 10] = True
+
+    segmentation = np.zeros((20, 20, 20), dtype=bool)
+    segmentation[3:18, 8:13, 8:13] = True
+
+    # Three tiles: tile 1 | tile 2 (gap region) | tile 3
+    # This ensures both endpoints are on fusion boundaries.
+    scale_map = np.zeros((20, 20, 20), dtype=np.int32)
+    scale_map[:10, :, :] = 1
+    scale_map[10:12, :, :] = 2
+    scale_map[12:, :, :] = 3
+
+    repaired = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=5.0,
+    )
+
+    # Expected: continuous line from z=5 to z=16
+    expected = np.zeros((20, 20, 20), dtype=bool)
+    expected[5:17, 10, 10] = True
+
+    np.testing.assert_array_equal(repaired, expected)
+
+
+def test_repair_fusion_breaks_no_boundary_endpoints():
+    """Endpoints not on a fusion boundary are left untouched."""
+    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    # Two fragments entirely within tile 1 — gap is NOT at a boundary
+    skeleton[3:7, 10, 10] = True
+    skeleton[9:13, 10, 10] = True
+
+    segmentation = np.zeros((20, 20, 20), dtype=bool)
+    segmentation[1:15, 8:13, 8:13] = True
+
+    # Entire volume is a single tile
+    scale_map = np.ones((20, 20, 20), dtype=np.int32)
+
+    repaired = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=5.0,
+    )
+
+    # No fusion boundary -> no repair
+    np.testing.assert_array_equal(repaired, skeleton)
+
+
+def test_repair_fusion_breaks_angle_ignored():
+    """Verify angle is ignored and the nearer candidate is chosen.
+
+    Construct a scenario where the closer candidate endpoint is at
+    a large angle (~90 degrees) to the source endpoint's tangent
+    direction, while a farther candidate aligns well with the
+    tangent. Since repair_fusion_breaks forces w_angle=0, the closer
+    candidate should be selected.
+
+    Layout (y/z plane at x=15):
+
+        z=12  C---C          (close candidate, along z at y=10)
+        z=13  |
+        z=14  .              (gap)
+        z=15  S--S--S--S--S--S  ...  F--F--F
+              y=5          y=10       y=16  y=18
+              (source along y)       (far candidate along y)
+
+    Tile boundaries along y:
+        tile 1: y < 11
+        tile 2: 11 <= y < 16
+        tile 3: y >= 16
+
+    This ensures source (15,10,15), close candidate (13,10,15),
+    and far candidate (15,16,15) are all fusion boundary endpoints.
+    """
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+
+    # Source fragment: horizontal line along y-axis at z=15, x=15
+    # Tangent direction is along +y
+    skeleton[15, 5:11, 15] = True  # endpoint at (15, 10, 15)
+
+    # Close candidate: 2 voxels away along z-axis (perpendicular, ~90°)
+    skeleton[12:14, 10, 15] = True  # endpoint at (13, 10, 15)
+
+    # Far candidate: 6 voxels away along y-axis (aligned, ~0°)
+    skeleton[15, 16:19, 15] = True  # endpoint at (15, 16, 15)
+
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[10:20, 3:20, 13:18] = True
+
+    # Three tiles with boundaries along y so all three
+    # endpoints are on a fusion boundary.
+    scale_map = np.zeros((30, 30, 30), dtype=np.int32)
+    scale_map[:, :11, :] = 1  # tile 1 (y < 11)
+    scale_map[:, 11:16, :] = 2  # tile 2 (11 <= y < 16)
+    scale_map[:, 16:, :] = 3  # tile 3 (y >= 16)
+
+    repaired = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=10.0,
+    )
+
+    # The closer candidate (13,10,15) should be chosen despite the
+    # ~90° angle, because w_angle=0.
+    # Repair line from (15,10,15) to (13,10,15) fills voxel (14,10,15).
+    # Additionally, (15,16,15) also repairs to the source (15,10,15),
+    # filling (15,11..15,15), and (12,10,15) repairs to (15,10,15),
+    # filling (14,10,15).
+    expected = skeleton.copy()
+    expected[14, 10, 15] = True  # gap between source and close candidate
+    expected[15, 11:16, 15] = True  # gap between source and far candidate
+
+    np.testing.assert_array_equal(repaired, expected)
+
+
+def test_repair_fusion_breaks_break_too_long():
+    """Breaks longer than repair_radius remain unrepaired."""
+    skeleton = np.zeros((30, 30, 30), dtype=bool)
+    skeleton[3:8, 15, 15] = True
+    skeleton[20:25, 15, 15] = True
+
+    segmentation = np.zeros((30, 30, 30), dtype=bool)
+    segmentation[1:27, 13:18, 13:18] = True
+
+    # Three tiles so both endpoints are boundary voxels
+    scale_map = np.zeros((30, 30, 30), dtype=np.int32)
+    scale_map[:8, :, :] = 1
+    scale_map[8:20, :, :] = 2
+    scale_map[20:, :, :] = 3
+
+    repaired = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=5.0,
+    )
+
+    np.testing.assert_array_equal(repaired, skeleton)
+
+
+def test_repair_fusion_breaks_value_error_not_3d():
+    """ValueError for non-3D skeleton."""
+    skeleton = np.zeros((10, 10), dtype=bool)
+    segmentation = np.zeros((10, 10, 10), dtype=bool)
+    scale_map = np.zeros((10, 10, 10), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="Expected 3D skeleton_image"):
+        repair_fusion_breaks(skeleton, segmentation, scale_map)
+
+
+def test_repair_fusion_breaks_value_error_shape_mismatch_seg():
+    """ValueError when segmentation shape doesn't match."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    segmentation = np.zeros((10, 10, 5), dtype=bool)
+    scale_map = np.zeros((10, 10, 10), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="must have the same shape"):
+        repair_fusion_breaks(skeleton, segmentation, scale_map)
+
+
+def test_repair_fusion_breaks_value_error_shape_mismatch_scale():
+    """ValueError when scale_map_image shape doesn't match."""
+    skeleton = np.zeros((10, 10, 10), dtype=bool)
+    segmentation = np.zeros((10, 10, 10), dtype=bool)
+    scale_map = np.zeros((10, 10, 5), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="must have the same shape"):
+        repair_fusion_breaks(skeleton, segmentation, scale_map)
+
+
+def test_repair_fusion_breaks_with_dilation():
+    """Dilation captures endpoints that are near but not on the boundary.
+
+    Two skeleton fragments with a gap at a tile boundary. One
+    endpoint sits 2 voxels away from the boundary, so without
+    dilation it would not be flagged. With dilation=2 it is
+    captured and the repair succeeds.
+    """
+    skeleton = np.zeros((20, 20, 20), dtype=bool)
+    # Fragment 1: z=3..7, endpoint at z=7 is 2 voxels from boundary
+    skeleton[3:8, 10, 10] = True
+    # Fragment 2: z=12..16, endpoint at z=12 is on boundary
+    skeleton[12:17, 10, 10] = True
+
+    segmentation = np.zeros((20, 20, 20), dtype=bool)
+    segmentation[1:18, 8:13, 8:13] = True
+
+    # Tile boundary at z=9/10
+    scale_map = np.zeros((20, 20, 20), dtype=np.int32)
+    scale_map[:10, :, :] = 1
+    scale_map[10:12, :, :] = 2
+    scale_map[12:, :, :] = 3
+
+    # Without dilation: endpoint at z=7 is not on boundary -> no repair
+    repaired_no_dil = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=10.0,
+        endpoint_mask_dilation=0,
+    )
+    np.testing.assert_array_equal(repaired_no_dil, skeleton)
+
+    # With dilation=2: endpoint at z=7 is captured -> repair succeeds
+    repaired_dil = repair_fusion_breaks(
+        skeleton_image=skeleton,
+        segmentation=segmentation,
+        scale_map_image=scale_map,
+        repair_radius=10.0,
+        endpoint_mask_dilation=2,
+    )
+
+    expected = np.zeros((20, 20, 20), dtype=bool)
+    expected[3:17, 10, 10] = True
+
+    np.testing.assert_array_equal(repaired_dil, expected)

@@ -5,7 +5,7 @@ from typing import Literal
 import numpy as np
 from numba import njit
 from numba.typed import List
-from scipy.ndimage import convolve, label
+from scipy.ndimage import binary_dilation, convolve, label
 from scipy.spatial import KDTree
 
 
@@ -528,12 +528,113 @@ def get_endpoint_directions(
     return directions
 
 
+@njit
+def _find_fusion_boundaries_numba(
+    scale_map_image: np.ndarray,
+) -> np.ndarray:
+    """Find voxels at prediction boundaries using 26-connectivity.
+
+    Numba-jitted kernel for ``find_fusion_boundaries``. Performs a
+    single pass over all voxels, checking 26-connected neighbors and
+    breaking early when a different non-zero neighbor is found.
+
+    Parameters
+    ----------
+    scale_map_image : np.ndarray
+        3D integer array of prediction IDs. 0 is background; all
+        other values (including negative) are valid prediction IDs.
+
+    Returns
+    -------
+    boundary_mask : np.ndarray
+        3D boolean array of the same shape as ``scale_map_image``.
+        ``True`` at voxels that are non-zero and have at least one
+        26-connected neighbor with a different non-zero label.
+
+    """
+    nz, ny, nx = scale_map_image.shape
+    out = np.zeros((nz, ny, nx), dtype=np.bool_)
+
+    for z in range(nz):
+        for y in range(ny):
+            for x in range(nx):
+                val = scale_map_image[z, y, x]
+                if val == 0:
+                    continue
+
+                for dz in range(-1, 2):
+                    for dy in range(-1, 2):
+                        for dx in range(-1, 2):
+                            if dz == 0 and dy == 0 and dx == 0:
+                                continue
+                            nz_ = z + dz
+                            ny_ = y + dy
+                            nx_ = x + dx
+                            if (
+                                nz_ < 0
+                                or nz_ >= nz
+                                or ny_ < 0
+                                or ny_ >= ny
+                                or nx_ < 0
+                                or nx_ >= nx
+                            ):
+                                continue
+                            neighbor = scale_map_image[nz_, ny_, nx_]
+                            if neighbor != 0 and neighbor != val:
+                                out[z, y, x] = True
+                                break
+                        if out[z, y, x]:
+                            break
+                    if out[z, y, x]:
+                        break
+
+    return out
+
+
+def find_fusion_boundaries(
+    scale_map_image: np.ndarray,
+) -> np.ndarray:
+    """Find voxels at prediction boundaries using 26-connectivity.
+
+    A voxel is on a fusion boundary if it has a non-zero label and
+    at least one 26-connected neighbor with a different non-zero
+    label. Background (0) neighbors do not trigger a boundary.
+
+    Parameters
+    ----------
+    scale_map_image : np.ndarray
+        3D integer array of prediction IDs. 0 is treated as
+        background. All non-zero values (including negative
+        integers) are valid prediction IDs.
+
+    Returns
+    -------
+    boundary_mask : np.ndarray
+        3D boolean array of the same shape as ``scale_map_image``.
+        ``True`` at voxels on a fusion boundary.
+
+    Raises
+    ------
+    ValueError
+        If ``scale_map_image`` is not 3D.
+
+    """
+    if scale_map_image.ndim != 3:
+        raise ValueError(
+            f"Expected 3D scale_map_image, got {scale_map_image.ndim}D array"
+        )
+
+    return _find_fusion_boundaries_numba(scale_map_image)
+
+
 def get_skeleton_data_cpu(
     skeleton_image: np.ndarray,
     endpoint_bounding_box: (
         tuple[tuple[int, int, int], tuple[int, int, int]] | None
     ) = None,
     label_map: np.ndarray | None = None,
+    endpoint_mask: np.ndarray | None = None,
+    endpoint_mask_dilation: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Extract skeleton topology data needed for break repair.
 
@@ -556,6 +657,18 @@ def get_skeleton_data_cpu(
         skipped and this array is used directly. Must have the same
         shape as ``skeleton_image``. When None, connected components
         are computed locally. Default is None.
+    endpoint_mask : np.ndarray or None, optional
+        3D boolean array of the same shape as ``skeleton_image``.
+        When provided, only endpoints whose coordinates index
+        ``True`` in this mask are returned. Applied after the
+        bounding box filter. Default is None.
+    endpoint_mask_dilation : int, optional
+        Number of binary dilation iterations to apply to the
+        ``endpoint_mask`` before filtering. Uses 26-connectivity
+        (3x3x3 structuring element). Only applied when
+        ``endpoint_mask`` is provided. This is useful for capturing
+        endpoints that are near but not exactly on the mask.
+        Default is 0 (no dilation).
 
     Returns
     -------
@@ -579,8 +692,10 @@ def get_skeleton_data_cpu(
     Raises
     ------
     ValueError
-        If skeleton_image is not 3D or if a provided label_map has
-        a different shape than skeleton_image.
+        If skeleton_image is not 3D, if a provided label_map has
+        a different shape than skeleton_image, or if a provided
+        endpoint_mask has a different shape than skeleton_image.
+
     """
     # Ensure skeleton is binary
     skeleton_binary = skeleton_image.astype(bool)
@@ -622,6 +737,28 @@ def get_skeleton_data_cpu(
 
         degree_one_coordinates = degree_one_coordinates[mask]
 
+    # Filter by endpoint mask if provided
+    if endpoint_mask is not None:
+        if endpoint_mask.shape != skeleton_image.shape:
+            raise ValueError(
+                f"endpoint_mask shape {endpoint_mask.shape} does not "
+                f"match skeleton_image shape {skeleton_image.shape}"
+            )
+        dilated_mask = endpoint_mask
+        if endpoint_mask_dilation > 0:
+            structure = np.ones((3, 3, 3), dtype=bool)
+            dilated_mask = binary_dilation(
+                endpoint_mask,
+                structure=structure,
+                iterations=endpoint_mask_dilation,
+            )
+        mask = dilated_mask[
+            degree_one_coordinates[:, 0],
+            degree_one_coordinates[:, 1],
+            degree_one_coordinates[:, 2],
+        ]
+        degree_one_coordinates = degree_one_coordinates[mask]
+
     # Get all skeleton coordinates
     all_skeleton_coordinates = np.argwhere(skeleton_binary)
 
@@ -652,6 +789,8 @@ def get_skeleton_data_cupy(
         tuple[tuple[int, int, int], tuple[int, int, int]] | None
     ) = None,
     label_map: np.ndarray | None = None,
+    endpoint_mask: np.ndarray | None = None,
+    endpoint_mask_dilation: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Extract skeleton topology data needed for break repair using GPU.
 
@@ -676,6 +815,18 @@ def get_skeleton_data_cupy(
         array is used directly. Must have the same shape as
         ``skeleton_image``. When None, connected components are
         computed locally on the GPU. Default is None.
+    endpoint_mask : np.ndarray or None, optional
+        3D boolean array of the same shape as ``skeleton_image``.
+        When provided, only endpoints whose coordinates index
+        ``True`` in this mask are returned. Applied after the
+        bounding box filter. Default is None.
+    endpoint_mask_dilation : int, optional
+        Number of binary dilation iterations to apply to the
+        ``endpoint_mask`` before filtering. Uses 26-connectivity
+        (3x3x3 structuring element). Only applied when
+        ``endpoint_mask`` is provided. This is useful for capturing
+        endpoints that are near but not exactly on the mask.
+        Default is 0 (no dilation).
 
     Returns
     -------
@@ -701,8 +852,10 @@ def get_skeleton_data_cupy(
     ImportError
         If CuPy is not installed.
     ValueError
-        If skeleton_image is not 3D or if a provided label_map has
-        a different shape than skeleton_image.
+        If skeleton_image is not 3D, if a provided label_map has
+        a different shape than skeleton_image, or if a provided
+        endpoint_mask has a different shape than skeleton_image.
+
     """
     try:
         import cupy as cp
@@ -754,6 +907,31 @@ def get_skeleton_data_cupy(
 
         degree_one_coordinates_gpu = degree_one_coordinates_gpu[mask]
 
+    # Transfer endpoint coordinates to CPU for mask filtering
+    degree_one_coordinates = cp.asnumpy(degree_one_coordinates_gpu)
+
+    # Filter by endpoint mask if provided (on CPU)
+    if endpoint_mask is not None:
+        if endpoint_mask.shape != skeleton_image.shape:
+            raise ValueError(
+                f"endpoint_mask shape {endpoint_mask.shape} does not "
+                f"match skeleton_image shape {skeleton_image.shape}"
+            )
+        dilated_mask = endpoint_mask
+        if endpoint_mask_dilation > 0:
+            structure = np.ones((3, 3, 3), dtype=bool)
+            dilated_mask = binary_dilation(
+                endpoint_mask,
+                structure=structure,
+                iterations=endpoint_mask_dilation,
+            )
+        mask = dilated_mask[
+            degree_one_coordinates[:, 0],
+            degree_one_coordinates[:, 1],
+            degree_one_coordinates[:, 2],
+        ]
+        degree_one_coordinates = degree_one_coordinates[mask]
+
     # Get all skeleton coordinates
     all_skeleton_coordinates_gpu = cp.argwhere(skeleton_gpu)
 
@@ -773,7 +951,6 @@ def get_skeleton_data_cupy(
 
     # Transfer results back to CPU
     degree_map = cp.asnumpy(degree_map_gpu)
-    degree_one_coordinates = cp.asnumpy(degree_one_coordinates_gpu)
     all_skeleton_coordinates = cp.asnumpy(all_skeleton_coordinates_gpu)
 
     return (
@@ -953,6 +1130,211 @@ def repair_breaks(
         endpoint_directions=endpoint_directions,
         w_distance=w_distance,
         w_angle=w_angle,
+    )
+
+    # Draw the repairs in-place
+    draw_lines(
+        skeleton=repaired_skeleton,
+        repair_start=repair_start,
+        repair_end=repair_end,
+    )
+
+    return repaired_skeleton
+
+
+def repair_fusion_breaks(
+    skeleton_image: np.ndarray,
+    segmentation: np.ndarray,
+    scale_map_image: np.ndarray,
+    repair_radius: float = 10.0,
+    endpoint_bounding_box: (
+        tuple[tuple[int, int, int], tuple[int, int, int]] | None
+    ) = None,
+    label_map: np.ndarray | None = None,
+    endpoint_mask_dilation: int = 0,
+    backend: Literal["cpu", "cupy"] = "cpu",
+) -> np.ndarray:
+    """Repair skeleton breaks at prediction fusion boundaries.
+
+    This function targets breaks that occur specifically at the
+    boundaries between different prediction tiles. It identifies
+    endpoints that lie on fusion boundaries (where adjacent voxels
+    have different non-zero prediction IDs in the scale map) and
+    attempts to connect them to other boundary endpoints within a
+    specified radius.
+
+    Unlike ``repair_breaks``, this function connects endpoints to
+    endpoints only (not to arbitrary skeleton voxels) and uses
+    distance-only selection (the angle term is disabled).
+
+    Parameters
+    ----------
+    skeleton_image : np.ndarray
+        The 3D binary array containing the skeleton.
+        The skeleton voxels are True or non-zero.
+    segmentation : np.ndarray
+        The 3D binary array containing the segmentation.
+        Foreground voxels are True or non-zero.
+    scale_map_image : np.ndarray
+        3D integer array of prediction tile IDs. 0 is treated as
+        background. All non-zero values (including negative integers)
+        are valid prediction IDs. Used to identify fusion boundaries
+        via 26-connectivity.
+    repair_radius : float, optional
+        The maximum Euclidean distance an endpoint can be connected
+        within the segmentation. Default is 10.0.
+    endpoint_bounding_box : tuple of tuple of int, optional
+        Tuple of ((z_min, y_min, x_min), (z_max, y_max, x_max))
+        defining a bounding box within which to consider endpoints
+        for repair. If None, all endpoints are considered.
+        Default is None.
+    label_map : np.ndarray or None, optional
+        Pre-computed global connected component label map for the
+        skeleton. When provided, the local connected component
+        computation is skipped. Must have the same shape as
+        ``skeleton_image``. When None, connected components are
+        computed locally. Default is None.
+    endpoint_mask_dilation : int, optional
+        Number of binary dilation iterations to apply to the
+        fusion boundary mask before filtering endpoints. Uses
+        26-connectivity (3x3x3 structuring element). This is
+        useful for capturing endpoints that are near but not
+        exactly on a tile boundary. Default is 0 (no dilation).
+    backend : Literal["cpu", "cupy"], optional
+        The backend to use for skeleton data extraction.
+        Default is "cpu".
+
+    Returns
+    -------
+    repaired_skeleton : np.ndarray
+        The 3D binary array containing the repaired skeleton.
+        Same shape and dtype as input skeleton_image.
+
+    Raises
+    ------
+    ValueError
+        If any input array is not 3D.
+    ValueError
+        If skeleton_image, segmentation, and scale_map_image do not
+        all have the same shape.
+
+    Notes
+    -----
+    The repair process:
+
+    1. Computes a fusion boundary mask from ``scale_map_image`` using
+       26-connectivity.
+    2. Identifies endpoints (degree-1 voxels) that lie on the fusion
+       boundary.
+    3. Builds a KDTree from the boundary endpoints only.
+    4. For each endpoint, finds candidate endpoints within
+       ``repair_radius``.
+    5. Tests each candidate by drawing a line and checking if it stays
+       in the segmentation.
+    6. Selects the closest valid candidate from a different connected
+       component (angle is ignored, distance-only selection).
+    7. Draws the repair lines in the skeleton.
+
+    Lazy/chunked support is not yet implemented. This function
+    operates synchronously on the full arrays in memory.
+
+    """
+    # Validate inputs
+    if skeleton_image.ndim != 3:
+        raise ValueError(
+            f"Expected 3D skeleton_image, got {skeleton_image.ndim}D array"
+        )
+
+    if segmentation.ndim != 3:
+        raise ValueError(f"Expected 3D segmentation, got {segmentation.ndim}D array")
+
+    if scale_map_image.ndim != 3:
+        raise ValueError(
+            f"Expected 3D scale_map_image, got {scale_map_image.ndim}D array"
+        )
+
+    if skeleton_image.shape != segmentation.shape:
+        raise ValueError(
+            f"skeleton_image and segmentation must have the same "
+            f"shape. Got {skeleton_image.shape} and "
+            f"{segmentation.shape}"
+        )
+
+    if skeleton_image.shape != scale_map_image.shape:
+        raise ValueError(
+            f"skeleton_image and scale_map_image must have the same "
+            f"shape. Got {skeleton_image.shape} and "
+            f"{scale_map_image.shape}"
+        )
+
+    # Convert to boolean arrays
+    skeleton_binary = skeleton_image.astype(bool)
+    segmentation_binary = segmentation.astype(bool)
+
+    # Create a working copy to modify
+    repaired_skeleton = skeleton_binary.copy()
+
+    # Compute fusion boundary mask
+    endpoint_mask = find_fusion_boundaries(scale_map_image)
+
+    # Extract skeleton topology data with endpoint mask
+    if backend == "cpu":
+        (
+            _degree_map,
+            degree_one_coordinates,
+            _all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cpu(
+            skeleton_binary,
+            endpoint_bounding_box=endpoint_bounding_box,
+            label_map=label_map,
+            endpoint_mask=endpoint_mask,
+            endpoint_mask_dilation=endpoint_mask_dilation,
+        )
+    elif backend == "cupy":
+        (
+            _degree_map,
+            degree_one_coordinates,
+            _all_skeleton_coordinates,
+            skeleton_label_map,
+        ) = get_skeleton_data_cupy(
+            skeleton_binary,
+            endpoint_bounding_box=endpoint_bounding_box,
+            label_map=label_map,
+            endpoint_mask=endpoint_mask,
+            endpoint_mask_dilation=endpoint_mask_dilation,
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
+
+    # Early exit if no boundary endpoints
+    if degree_one_coordinates.shape[0] == 0:
+        return repaired_skeleton
+
+    # Build KDTree from boundary endpoints only
+    kdtree = KDTree(degree_one_coordinates)
+
+    # Find repair candidates within radius for each endpoint
+    repair_candidates = []
+    for endpoint in degree_one_coordinates:
+        indices = kdtree.query_ball_point(endpoint, repair_radius)
+
+        if len(indices) > 0:
+            candidates = degree_one_coordinates[indices]
+        else:
+            candidates = np.empty((0, 3), dtype=degree_one_coordinates.dtype)
+
+        repair_candidates.append(candidates)
+
+    # Find valid repairs (w_angle=0 to disable angle term)
+    repair_start, repair_end = find_break_repairs(
+        end_point_coordinates=degree_one_coordinates,
+        repair_candidates=repair_candidates,
+        label_map=skeleton_label_map,
+        segmentation=segmentation_binary,
+        endpoint_directions=None,
+        w_distance=1.0,
+        w_angle=0.0,
     )
 
     # Draw the repairs in-place
