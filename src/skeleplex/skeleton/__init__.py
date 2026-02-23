@@ -1,7 +1,14 @@
 """Tools to create a skeleton image of a structure."""
 
-from skeleplex.skeleton._break_detection import find_break_repairs, repair_breaks
-from skeleplex.skeleton._break_detection_lazy import repair_breaks_lazy
+from skeleplex.skeleton._break_detection import (
+    find_break_repairs,
+    repair_breaks,
+    repair_fusion_breaks,
+)
+from skeleplex.skeleton._break_detection_lazy import (
+    repair_breaks_lazy,
+    repair_fusion_breaks_lazy,
+)
 from skeleplex.skeleton._chunked_label import (
     label_chunks_parallel,
     merge_touching_labels,
@@ -21,6 +28,8 @@ __all__ = [
     "find_break_repairs",
     "repair_breaks",
     "repair_breaks_lazy",
+    "repair_fusion_breaks",
+    "repair_fusion_breaks_lazy",
     "relabel_parallel",
     "merge_touching_labels",
     "upscale_skeleton",
